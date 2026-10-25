@@ -18,8 +18,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -429,53 +430,68 @@ fun AppSegment(
 ) {
     val c = AppTheme.colors
     val reduceMotion = rememberReduceMotion()
-    Row(
+    val n = options.size
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(c.surfaceTonal)
             .padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        options.forEachIndexed { index, label ->
-            val active = index == selectedIndex
-            // 选中块在三项之间平滑"浮起"，而不是硬切
-            val elevation by animateDpAsState(
-                targetValue = if (active) 2.dp else 0.dp,
-                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
-                label = "segElevation",
-            )
-            val bg by animateColorAsState(
-                targetValue = if (active) c.surface else Color.Transparent,
-                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
-                label = "segBg",
-            )
-            val fg by animateColorAsState(
-                targetValue = if (active) c.primary else c.textSecondary,
-                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
-                label = "segFg",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 38.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .shadow(elevation, RoundedCornerShape(14.dp))
-                    .background(bg)
-                    .selectable(
-                        selected = active,
-                        role = Role.Tab,
-                        onClick = { onSelect(index) },
-                    )
-                    .semantics(mergeDescendants = true) { this.selected = active },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = AppType.segment,
-                    color = fg,
-                    maxLines = 1,
+        val track = maxWidth
+        val itemW = track / n
+        // 选中块是一个真实滑块：在三格之间滑过去（iOS 分段控件的做法），
+        // 而不是各自淡入淡出——那会在切换瞬间出现新旧两个半透明块交替。
+        val progress by animateFloatAsState(
+            targetValue = if (n <= 1) 0f else selectedIndex / (n - 1).toFloat(),
+            animationSpec = if (reduceMotion) {
+                snap()
+            } else {
+                spring(dampingRatio = 0.82f, stiffness = 460f)
+            },
+            label = "segSlide",
+        )
+
+        // 滑块（纯装饰，垫在文字下面）
+        Box(
+            modifier = Modifier
+                .offset(x = (track - itemW) * progress)
+                .width(itemW)
+                .heightIn(min = 38.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .shadow(2.dp, RoundedCornerShape(14.dp))
+                .background(c.surface),
+        )
+
+        // 选项层：等宽平铺，可点区域不变
+        Row(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, label ->
+                val active = index == selectedIndex
+                val fg by animateColorAsState(
+                    targetValue = if (active) c.primary else c.textSecondary,
+                    animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+                    label = "segFg",
                 )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 38.dp)
+                        .selectable(
+                            selected = active,
+                            role = Role.Tab,
+                            onClick = { onSelect(index) },
+                        )
+                        .semantics(mergeDescendants = true) { this.selected = active },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        style = AppType.segment,
+                        color = fg,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
