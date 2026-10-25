@@ -453,14 +453,15 @@ fun AppSegment(
             label = "segSlide",
         )
 
-        // 滑块（纯装饰，垫在文字下面）
+        // 滑块（纯装饰，垫在文字下面）。
+        // 不用 Modifier.shadow：位移动画时阴影层与内容层位置不同步，
+        // ColorOS 上会留下一块未圆角化的灰色矩形残影。层级靠色调面表达就够了。
         Box(
             modifier = Modifier
                 .offset(x = (track - itemW) * progress)
                 .width(itemW)
                 .heightIn(min = 38.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .shadow(2.dp, RoundedCornerShape(14.dp))
                 .background(c.surface),
         )
 
