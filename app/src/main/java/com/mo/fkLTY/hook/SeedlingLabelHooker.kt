@@ -32,6 +32,7 @@ import io.github.libxposed.api.XposedInterface
  *
  * 1.2.14 按实际使用体验收敛文案长度:「打开“夸克网盘”查看」在卡片上偏挤,
  * 改为 标题/按钮 = 「打开夸克网盘」、副标题 = 「点击打开夸克网盘」。
+ * 1.2.15 按钮压到两个字「打开」,目标 App 名交给标题和副标题,按钮不再重复。
  *
  * 选 `build()` 而不是 `buttonLabel(String)` 的原因:后者被调用时还没设动作/包名,
  * 无法判断"这张卡是不是我们关心的那个源 App";`build()` 返回的 Seedling 已经带着
@@ -96,9 +97,9 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
             if (!BrowserAvailability.isAvailable(context, swap.to)) continue
 
             val label = appLabel(context, swap.to) ?: swap.to
-            // 1.2.14:按用户要求去掉"查看"与引号,标题与按钮同文,副标题独立一句
+            // 1.2.14 去掉"查看"与引号;1.2.15 按钮进一步压到两个字,目标 App 名交给标题去说
             val openText = "打开$label"
-            val newButton = openText
+            val newButton = "打开"
             val newTitle = openText
             val newSubTitle = "点击$openText"
 
