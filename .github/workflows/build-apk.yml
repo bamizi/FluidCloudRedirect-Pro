@@ -108,12 +108,16 @@ jobs:
 
       # 单元测试先跑,逻辑改动挂了能立刻在 CI 上看到
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
 
       # 配了 release keystore 就只出 release 包，避免同一页面挂着两个签名不同的 APK
       - name: Assemble debug APK
         if: env.KEYSTORE_B64 == ''
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
 
       # ---- 以下为可选的 release 签名 ----
       # 仓库 Settings → Secrets and variables → Actions 里配置：
@@ -135,14 +139,18 @@ jobs:
 
       - name: Assemble release APK
         if: env.KEYSTORE_B64 != ''
-        run: ./gradlew --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
 
       # R8 版:额外产出一个开了缩减+混淆的包,与普通版一起发布,由用户自己选。
       # 与普通版同签名同 applicationId,所以能互相覆盖安装。
       # keep 规则在 app/src/main/keepRules/rules.keep —— java_init.list 里的入口类
       # 在代码里零引用,不 keep 会被 R8 当死代码删掉,模块直接不加载。
       - name: Assemble R8 APK
-        run: ./gradlew --no-daemon assembleR8
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleR8 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
 
       # 产物统一改名成 FluidCloudRedirect-Pro-<版本>.apk 与 ...-<版本>-r8.apk。
       # 原因:Gradle 的默认产物永远叫 app-debug.apk / app-release.apk,下载到手机文件夹里
@@ -198,6 +206,33 @@ jobs:
           name: mapping-${{ env.APK_VER }}-${{ github.run_number }}
           path: app/build/outputs/mapping/**/mapping.txt
           if-no-files-found: ignore
+
+      # 构建失败时把 Gradle 的报错以 ::error:: 输出。
+      # 为什么要这一步:Actions 日志接口需要管理员权限,匿名读不到;
+      # 而 ::error:: 会进 check-run 的 annotations,是公开可读的。
+      # 这样定位编译错误不用再人工翻日志或截图。
+      - name: Summarise Gradle failures
+        if: failure()
+        run: |
+          set +e
+          LOG="$RUNNER_TEMP/gradle.log"
+          if [ ! -f "$LOG" ]; then
+            echo "::error::No gradle.log captured (the failure happened before Gradle ran)"
+            exit 0
+          fi
+          OUT=/tmp/gradle-errors.txt
+          : > "$OUT"
+          # Kotlin 编译错误 / Gradle 配置错误 / 失败摘要，各抓一段
+          grep -m 40 -E "^(e|w): |^\* What went wrong|^FAILURE: |^Execution failed for task" "$LOG" >> "$OUT" 2>/dev/null
+          grep -m 3 -A 10 "What went wrong" "$LOG" >> "$OUT" 2>/dev/null
+          if [ ! -s "$OUT" ]; then
+            tail -n 80 "$LOG" >> "$OUT"
+          fi
+          # 去重、截断、逐行转成 annotation
+          sort -u "$OUT" | head -n 50 | tr -d "\r" | while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            echo "::error::${line}"
+          done
 
       # 把签名指纹取出来写进 Release 说明：用户和作者都能一眼看出"这次的包能不能覆盖上一版"。
       # 不用去翻 Actions 日志（那些要登录才能看），Release 页面本身就是公开的凭证。
