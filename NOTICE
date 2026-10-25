@@ -16,7 +16,7 @@ FluidCloudRedirect Pro — 归属与修改声明
   修改者    bamizi(https://github.com/bamizi)
   起算日期  2026-10-24
   基线版本  上游 v1.0.2(commit 见本仓库 git log 中上游提交)
-  当前版本  1.2.12
+  当前版本  1.2.13
 
   主要修改:
     1. 新增「自定义 URL → App 跳转规则」:域名(含子域名)/ URL 包含 / 正则三种匹配,
@@ -64,6 +64,14 @@ FluidCloudRedirect Pro — 归属与修改声明
    15. (1.2.12,2026-10-25) 1.2.11 的 Seedling 路径在真机上未被走到;改 hook
        `SingleAppInstallPanel.onPositiveText()/onTitle()`(安装卡片自身的文案方法),
        并通过 `getTextIntent()` 精确比对源包名后再替换文案。
+   16. (1.2.13,2026-10-25) 更正第 15 条的前半句:真机日志证明 1.2.11 的
+       `Seedling$Builder.build()` 路径其实一直在被走到,只是当时所有分支都是静默返回,
+       改了也不留痕,才误判为"没走到";真正没被调用的是 1.2.12 新增的
+       `SingleAppInstallPanel.onPositiveText()/onTitle()`(本机型卡片由 pantanal
+       Seedling + ChannelClient 渲染,不经该面板)。本版保留这两处 hook 作为兜底,
+       主路径回到 `build()`,并在同一处补齐 `cardTitle`/`capsTitle`/`capsDirectText`/
+       `cardSubTitle`,使卡片不再出现"标题写安装、按钮写打开"的矛盾;同时新增目标 App
+       可用性校验,目标未安装时不改任何文案。
 
 许可与再分发
 ------------

@@ -1,6 +1,7 @@
 package com.mo.fkLTY.hook
 
 import android.content.Context
+import com.mo.fkLTY.engine.BrowserAvailability
 import com.mo.fkLTY.engine.PackageSwapEngine
 import io.github.libxposed.api.XposedInterface
 
@@ -20,8 +21,14 @@ import io.github.libxposed.api.XposedInterface
  * Lcom/oplus/textintent/pantanal/Seedling;
  *   getCardInfo() -> CardInfo, getData() -> ActionData, show()V
  * Lcom/oplus/textintent/pantanal/bean/CardInfo;   // Kotlin data class,有 get/set
- *   setButtonText / setLeftButtonText / setRightButtonText / setCardTitle(String)
+ *   setButtonText / setLeftButtonText / setRightButtonText
+ *   setCardTitle / setCardSubTitle / setCapsTitle / setCapsDirectText   (均 String)
  * ```
+ *
+ * 1.2.13 起不只改按钮:实测 metis 给 SystemUI 的 businessData 里,按钮改成"打开X"之后
+ * `cardTitle`/`capsTitle` 仍写着"安装"夸克"查看"、`cardSubTitle` 仍写着"前往一加软件商店安装",
+ * 卡片自相矛盾。所以标题三处 + 副标题一并改写(仅当原文含"安装"时)。
+ * 实测证据见文档 §17.5。
  *
  * 选 `build()` 而不是 `buttonLabel(String)` 的原因:后者被调用时还没设动作/包名,
  * 无法判断"这张卡是不是我们关心的那个源 App";`build()` 返回的 Seedling 已经带着
@@ -82,15 +89,46 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         for (swap in swaps) {
             // 严格匹配:卡片里必须出现源包名,避免把"安装别的 App"的卡也改掉
             if (blobs.none { it.contains(swap.from, ignoreCase = true) }) continue
+            // 目标 App 没装就一个字都别改:改了文案却打不开,比不改更糟
+            if (!BrowserAvailability.isAvailable(context, swap.to)) continue
+
             val label = appLabel(context, swap.to) ?: swap.to
-            val newText = "打开$label"
+            val newButton = "打开$label"
+            val newTitle = "打开“$label”查看"
+            val newSubTitle = "已安装$label，点击直接打开"
+
             var changed = 0
-            if (button != null) if (set(ciCls, cardInfo, "setButtonText", newText)) changed++
-            if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newText)) changed++
-            if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newText)) changed++
+            if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
+            if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newButton)) changed++
+            if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newButton)) changed++
+
+            /*
+             * 标题 / 胶囊标题 / 胶囊直显文字:仍写着"安装"的才改。
+             * 不无条件覆盖的原因:metis 在不同场景会给这三处换成别的文案(如"打开查看"),
+             * 硬套成"打开X查看"反而制造新的不一致。
+             */
+            if (title != null && title.contains("安装")) {
+                if (set(ciCls, cardInfo, "setCardTitle", newTitle)) changed++
+            }
+            val capsTitle = str(ciCls, cardInfo, "getCapsTitle")
+            if (capsTitle != null && capsTitle.contains("安装")) {
+                if (set(ciCls, cardInfo, "setCapsTitle", newTitle)) changed++
+            }
+            val capsDirect = str(ciCls, cardInfo, "getCapsDirectText")
+            if (capsDirect != null && capsDirect.contains("安装")) {
+                if (set(ciCls, cardInfo, "setCapsDirectText", newTitle)) changed++
+            }
+            // 副标题是"前往一加软件商店安装"这类诱导安装话术,目标 App 已装就该说清楚
+            val subTitle = str(ciCls, cardInfo, "getCardSubTitle")
+            if (subTitle != null && subTitle.contains("安装")) {
+                if (set(ciCls, cardInfo, "setCardSubTitle", newSubTitle)) changed++
+            }
+
             HookLog.card(
-                "seedling[build]: 引导安装卡改文案 -> $newText " +
-                    "(from=${swap.from}, fields=$changed, 原按钮=$button, 原标题=$title)",
+                "seedling[build]: 引导安装卡改文案 fields=$changed " +
+                    "(from=${swap.from} -> ${swap.to}; " +
+                    "按钮「$button」->「$newButton」, 标题「$title」->「$newTitle」, " +
+                    "副标题「$subTitle」->「$newSubTitle」, 胶囊「$capsTitle」)",
             )
             return
         }

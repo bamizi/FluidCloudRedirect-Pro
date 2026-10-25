@@ -1,5 +1,39 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.13（真机实测定案：文案层只有 `Seedling$Builder.build()` 一条路，标题一并改）
+
+1.2.12 在真机上跑通了，但拿到 metis 推给 SystemUI 的原始 `businessData` 后发现两件事：
+
+**一、`SingleAppInstallPanel.onPositiveText()/onTitle()` 在本机型从未被调用。**
+两个 hook 都装上了、都打出了 `Hook installed`，日志里却一条命中都没有 ——
+说明这张卡走的是 pantanal 的 `Seedling` + `ChannelClient` JS 卡（`eventCode:20104`），
+不是传统安装面板。因此 1.2.12 那套 `InstallPanelTextHooker` 属于"装上了但用不上"，
+保留作为其他机型/其他卡片类型的兜底，不再作为主路径。
+
+**二、只改按钮会让卡片自相矛盾。** 实测原始数据是：
+
+```json
+"buttonText":   "打开夸克网盘",          // 我们改的
+"cardTitle":    "安装“夸克”查看",        // 没动
+"capsTitle":    "安装“夸克”查看",        // 没动
+"cardSubTitle": "前往一加软件商店安装"    // 没动
+```
+
+本版在同一个 `build()` 里补齐（`CardInfo` 的 setter 已从 `classes7.dex` 核对，
+`setCardTitle` / `setCardSubTitle` / `setCapsTitle` / `setCapsDirectText` 均存在）：
+
+| 字段 | 原文案 | 改后 |
+|---|---|---|
+| `buttonText` | 去安装 | 打开夸克网盘 |
+| `cardTitle` | 安装“夸克”查看 | 打开“夸克网盘”查看 |
+| `capsTitle` | 安装“夸克”查看 | 打开“夸克网盘”查看 |
+| `capsDirectText` | 安装“夸克”查看 | 打开“夸克网盘”查看 |
+| `cardSubTitle` | 前往一加软件商店安装 | 已安装夸克网盘，点击直接打开 |
+
+改写条件收紧了：标题三处与副标题**只在原文含「安装」时才改**，避免 metis 换文案后
+被硬套成新的不一致；另外新增目标 App 可用性校验（`BrowserAvailability.isAvailable`），
+目标没装就一个字都不动（改了文案却打不开，比不改更糟）。
+
 ## 1.2.12（换更准的切入点：安装卡片自己的文案方法）
 
 1.2.11 用 `Seedling$Builder.build()` 改按钮文案，真机上钩子装上了、但 `build()` 那条路没被走到
