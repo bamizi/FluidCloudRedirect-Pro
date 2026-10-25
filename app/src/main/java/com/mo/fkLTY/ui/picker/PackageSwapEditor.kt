@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -196,7 +197,8 @@ private fun AppDialogShell(
     title: String,
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
-    actions: @Composable () -> Unit,
+    // 必须是 RowScope：底部两个操作要用 Modifier.weight 均分宽度
+    actions: @Composable RowScope.() -> Unit,
 ) {
     val c = AppTheme.colors
     Dialog(

@@ -59,10 +59,11 @@ class InstallPanelTextHooker(private val which: String) : XposedInterface.Hooker
             val context = AppContext.get()
             if (context != null && !BrowserAvailability.isAvailable(context, swap.to)) return original
             val label = context?.let { appLabel(it, swap.to) } ?: swap.to
-            // 与 SeedlingLabelHooker 共用同一份自定义文案；留空则不改
-            val text = RedirectPrefs.cardText(prefs).resolve(label)
-            val newText = text.button.takeIf { it.isNotBlank() }
-                ?: text.title.takeIf { it.isNotBlank() }
+            // 与 SeedlingLabelHooker 共用同一份自定义文案；留空则不改。
+            // 注意别把这个局部变量叫 text —— intercept 的参数已经叫 text 了。
+            val resolved = RedirectPrefs.cardText(prefs).resolve(label)
+            val newText = resolved.button.takeIf { it.isNotBlank() }
+                ?: resolved.title.takeIf { it.isNotBlank() }
                 ?: return original
             HookLog.card("install-panel[$which]: 「$text」-> 「$newText」 (from=${swap.from}, pkg=$pkg)")
             return newText
