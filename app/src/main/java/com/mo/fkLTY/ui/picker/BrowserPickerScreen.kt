@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
@@ -139,21 +138,21 @@ fun BrowserPickerScreen(
                 ),
             )
 
-            // 页面切换：向左/向右轻推 + 淡入淡出。每页滚动位置各自保留，
-            // 切回来还能停在原来的位置（AnimatedContent 会为不同 targetState 各自保存状态）。
+            // 页面切换：旧页先快速淡出（不位移），退完新页再淡入 + 向切换方向轻推。
+            // 旧页淡出与新页淡入**错开进行**，转场中两页不会叠在一起 ——
+            // 之前同时淡入淡出，长列表页切换时新旧内容整个叠印成一团。
+            // 每页滚动位置各自保留，切回来还停在原来的位置。
             val reduceMotion = rememberReduceMotion()
             val tabDur = motionDuration(AppMotion.regular, reduceMotion)
+            val outDur = motionDuration(AppMotion.instant, reduceMotion)
             AnimatedContent(
                 targetState = tab,
                 transitionSpec = {
                     val dir = if (targetState > initialState) 1 else -1
                     (
-                        fadeIn(tween(tabDur)) +
-                            slideInHorizontally(tween(tabDur)) { w -> dir * w / 16 }
-                        ) togetherWith (
-                        fadeOut(tween(tabDur)) +
-                            slideOutHorizontally(tween(tabDur)) { w -> -dir * w / 16 }
-                        )
+                        fadeIn(tween(tabDur, delayMillis = outDur)) +
+                            slideInHorizontally(tween(tabDur, delayMillis = outDur)) { w -> dir * w / 16 }
+                        ) togetherWith fadeOut(tween(outDur))
                 },
                 label = "tabContent",
                 modifier = Modifier
