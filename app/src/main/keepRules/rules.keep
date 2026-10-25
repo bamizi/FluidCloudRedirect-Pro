@@ -12,6 +12,19 @@
 -keep class com.mo.fkLTY.hook.ParseIntentHooker { *; }
 -keep class com.mo.fkLTY.hook.MonitorHooker { *; }
 -keep class com.mo.fkLTY.hook.ReflectedTextIntent { *; }
+# 1.2.11~1.2.12 新增的三个 hooker(卡片文案层 / 点击兜底)
+-keep class com.mo.fkLTY.hook.SeedlingLabelHooker { *; }
+-keep class com.mo.fkLTY.hook.InstallPanelTextHooker { *; }
+-keep class com.mo.fkLTY.hook.StartActivityHooker { *; }
 
 # XposedProvider 在 AndroidManifest 中声明,AGP 会自动保留,此处显式声明以防误删
 -keep class io.github.libxposed.service.XposedProvider { *; }
+
+# libxposed 的 api 是 compileOnly(框架进程内已有实现,按设计不允许打进 APK),
+# 所以 R8 在缩减阶段"看不到"这些类,会按缺失类报 warning;R8 full mode 下这类
+# warning 有可能升级成 error 直接构建失败。运行时由框架提供,压掉即可。
+-dontwarn io.github.libxposed.**
+
+# 保留崩溃栈还原所需的属性:配合 CI 里留档的 mapping.txt,能把混淆后的栈还原到行号
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

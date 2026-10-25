@@ -1,5 +1,76 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.16（发布产物带版本号命名 + 新增 R8 版）
+
+模块功能无改动，只改打包与发布产物。以前每个 Release 挂的都是一个改名前的
+`app-debug.apk`，几个版本下载到手机文件夹里全重名，分不清谁新谁旧。
+
+### 一、产物带版本号
+
+CI 里新增 `Rename APK with version` 一步：
+
+- 版本号从 `app/build.gradle.kts` 的 `versionName` 取（与 `module.prop` 的 `version` 同源维护）
+- 产物改名为 `FluidCloudRedirect-Pro-<版本>.apk`，并落进 `$GITHUB_ENV` 供后续步骤引用
+- `upload-artifact` 与 `softprops/action-gh-release` 都改用该环境变量，
+  不再用 `app/build/outputs/apk/**/*.apk` 通配，避免把未改名的原始产物一起挂上去
+- 改名后带 `test -s` 自检，文件不存在或为空直接失败，不会静默发布空包
+
+### 二、新增 R8 版
+
+每个版本同时发布两个包：
+
+| 文件 | 说明 |
+|---|---|
+| `FluidCloudRedirect-Pro-<版本>.apk` | 普通版（未做 R8） |
+| `FluidCloudRedirect-Pro-<版本>-r8.apk` | R8 版（代码缩减 + 混淆） |
+
+新 buildType `r8`：`isDebuggable = false`、`optimization { enable = true }`，
+签名沿用 debug（CI 里由 `DEBUG_KEYSTORE` 固定）。**同 applicationId、同 versionCode、
+同签名**，因此两个包可以互相覆盖安装，功能完全一致，只在文件名上区分。
+
+### 三、R8 的坑：入口类必须按名字 keep
+
+AGP 9.3+ 的自定义 keep 规则要放在 `app/src/main/keepRules/*.keep`，旧的 `proguardFiles`
+不再是这条路径（AGP 9 起还取消了 `proguard-android.txt`，新 DSL 默认带上
+等价于 `proguard-android-optimize.txt` 的规则）。
+
+工程里原本就有 `keepRules/rules.keep`，而且第一条正是：
+
+```
+-keep class com.mo.fkLTY.hook.MainHook { *; }
+```
+
+原因：框架不是通过代码引用找入口的，而是读 `META-INF/xposed/java_init.list` 里那一行类名。
+这个类在全项目里没有任何代码引用点，R8 打开缩减后会判定为死代码直接删掉（或改名），
+结果就是**模块装了、作用域也勾了，但启动时框架找不到类，一行日志都没有**——
+表现得和"模块没生效"一模一样，极难排查。
+
+本版在这个文件里补了三类规则：
+
+- 1.2.11~1.2.12 新增的三个 hooker（`SeedlingLabelHooker` / `InstallPanelTextHooker` /
+  `StartActivityHooker`）按名字保留，与既有 4 个 hooker 的写法保持一致
+- `-dontwarn io.github.libxposed.**`：libxposed 的 api 是 `compileOnly`，
+  R8 看不到这些类会报缺失类；full mode 下可能升级成构建失败，运行时由框架提供
+- `-keepattributes SourceFile,LineNumberTable` + `-renamesourcefileattribute SourceFile`，
+  配合 CI 留档的 `mapping.txt` 可把混淆后的崩溃栈还原到行号
+
+同时 CI 里加了三道闸：
+
+- `Assemble R8 APK` 之后同样触发 `verifyXposedMetadata`，断言 `META-INF/xposed/` 三件套还在
+- `Resolve APK signature` 分别校验两个包的证书，**不一致就直接失败**
+  （否则两个包无法互相覆盖安装，用户换包时会被迫卸载重配）
+- `mapping.txt` 作为 Actions 产物单独留档（不挂 Release，对普通用户没意义）
+
+本版发布产物：`FluidCloudRedirect-Pro-1.2.16.apk` 与 `FluidCloudRedirect-Pro-1.2.16-r8.apk`。
+
+> 状态：**已改好、尚未发布，R8 版也尚未在 CI 上实际构建过一次**。
+> 按用户要求这次不发版，改动留在工作区；下次打 tag 时生效。
+> 首次跑 R8 时优先确认三件事：
+> 1. `verifyXposedMetadata` 通过（三件套还在）
+> 2. 两个包签名指纹一致
+> 3. 装上 R8 版后设 `adb logcat | grep FluidRedirect`，能看到 `loaded in com.oplus.metis` ——
+>    看得到就说明入口类没被 R8 删掉
+
 ## 1.2.15（按钮再压到两个字：打开）
 
 1.2.14 把标题和按钮写成同一句「打开夸克网盘」，摆到卡片上看按钮偏宽、和标题重复。

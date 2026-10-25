@@ -137,27 +137,90 @@ jobs:
         if: env.KEYSTORE_B64 != ''
         run: ./gradlew --no-daemon assembleRelease
 
+      # R8 版:额外产出一个开了缩减+混淆的包,与普通版一起发布,由用户自己选。
+      # 与普通版同签名同 applicationId,所以能互相覆盖安装。
+      # keep 规则在 app/src/main/keepRules/rules.keep —— java_init.list 里的入口类
+      # 在代码里零引用,不 keep 会被 R8 当死代码删掉,模块直接不加载。
+      - name: Assemble R8 APK
+        run: ./gradlew --no-daemon assembleR8
+
+      # 产物统一改名成 FluidCloudRedirect-Pro-<版本>.apk 与 ...-<版本>-r8.apk。
+      # 原因:Gradle 的默认产物永远叫 app-debug.apk / app-release.apk,下载到手机文件夹里
+      # 几个版本全重名,既分不清谁新谁旧,也没法一眼看出装的哪一版。
+      # 版本号从 build.gradle.kts 的 versionName 取,和 module.prop 里的 version 由同一处维护。
+      - name: Rename APK with version
+        run: |
+          set -eo pipefail
+          shopt -s nullglob
+          VER=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VER" ]; then
+            echo "::error::cannot read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          # 普通版:配了 release keystore 出 release,否则出 debug,按实际存在的取
+          dbg=(app/build/outputs/apk/debug/*.apk)
+          rel=(app/build/outputs/apk/release/*.apk)
+          r8apk=(app/build/outputs/apk/r8/*.apk)
+          SRC_MAIN="${dbg[0]:-${rel[0]:-}}"
+          SRC_R8="${r8apk[0]:-}"
+          if [ -z "$SRC_MAIN" ] || [ -z "$SRC_R8" ]; then
+            echo "::error::missing APK (main='$SRC_MAIN' r8='$SRC_R8'); tree follows"
+            find app/build/outputs/apk -name '*.apk' || true
+            exit 1
+          fi
+          OUT_MAIN="FluidCloudRedirect-Pro-${VER}.apk"
+          OUT_R8="FluidCloudRedirect-Pro-${VER}-r8.apk"
+          cp "$SRC_MAIN" "$OUT_MAIN"
+          cp "$SRC_R8" "$OUT_R8"
+          # 自检:改完名字的文件必须存在且非空,否则后面 upload-artifact 会报 "no files found"
+          test -s "$OUT_MAIN"
+          test -s "$OUT_R8"
+          echo "APK_OUT=$OUT_MAIN" >> "$GITHUB_ENV"
+          echo "APK_OUT_R8=$OUT_R8" >> "$GITHUB_ENV"
+          echo "APK_VER=$VER" >> "$GITHUB_ENV"
+          echo "renamed: $SRC_MAIN -> $OUT_MAIN ($(stat -c%s "$OUT_MAIN") bytes)"
+          echo "renamed: $SRC_R8 -> $OUT_R8 ($(stat -c%s "$OUT_R8") bytes)"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ github.run_number }}
-          path: app/build/outputs/apk/**/*.apk
+          name: apk-${{ env.APK_VER }}-${{ github.run_number }}
+          path: |
+            ${{ env.APK_OUT }}
+            ${{ env.APK_OUT_R8 }}
           if-no-files-found: error
+
+      # R8 会混淆,保留 mapping 才能在用户贴崩溃日志时还原到具体行。
+      # 不挂在 Release 上(对普通用户没意义),只作为 Actions 产物留档。
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping-${{ env.APK_VER }}-${{ github.run_number }}
+          path: app/build/outputs/mapping/**/mapping.txt
+          if-no-files-found: ignore
 
       # 把签名指纹取出来写进 Release 说明：用户和作者都能一眼看出"这次的包能不能覆盖上一版"。
       # 不用去翻 Actions 日志（那些要登录才能看），Release 页面本身就是公开的凭证。
+      # 两个包必须同签名,否则普通版和 R8 版无法互相覆盖安装,这里直接断死。
       - name: Resolve APK signature
         run: |
+          set -o pipefail
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           APKSIGNER=$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
-          APK=$(ls app/build/outputs/apk/*/*.apk 2>/dev/null | head -1)
-          FP=""
-          if [ -n "$APKSIGNER" ] && [ -n "$APK" ]; then
-            FP=$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          FP_MAIN=""
+          FP_R8=""
+          if [ -n "$APKSIGNER" ]; then
+            FP_MAIN=$("$APKSIGNER" verify --print-certs "$APK_OUT" 2>/dev/null | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+            FP_R8=$("$APKSIGNER" verify --print-certs "$APK_OUT_R8" 2>/dev/null | grep -m1 'SHA-256 digest' | awk '{print $NF}')
           fi
-          echo "APK_CERT_SHA256=$FP" >> "$GITHUB_ENV"
-          echo "APK: $APK"
-          echo "cert SHA-256: $FP"
+          echo "APK_CERT_SHA256=$FP_MAIN" >> "$GITHUB_ENV"
+          echo "APK_CERT_SHA256_R8=$FP_R8" >> "$GITHUB_ENV"
+          echo "main : $FP_MAIN"
+          echo "r8   : $FP_R8"
+          if [ -n "$FP_MAIN" ] && [ -n "$FP_R8" ] && [ "$FP_MAIN" != "$FP_R8" ]; then
+            echo "::error::普通版与 R8 版签名不一致,两者无法互相覆盖安装"
+            exit 1
+          fi
 
       # 打 tag（例如 v1.2.5）推送后，自动把 APK 挂到 Release 上。
       # body 里必须写源码链接：GPL-3.0 §6 要求分发二进制时同时提供对应源码。
@@ -166,12 +229,24 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/**/*.apk
+          files: |
+            ${{ env.APK_OUT }}
+            ${{ env.APK_OUT_R8 }}
           generate_release_notes: true
           body: |
+            ## 两个包,选一个装
+
+            | 文件 | 说明 | 适合谁 |
+            |---|---|---|
+            | `FluidCloudRedirect-Pro-${{ env.APK_VER }}.apk` | 普通版,未做 R8 处理 | 默认装这个;出问题好排查 |
+            | `FluidCloudRedirect-Pro-${{ env.APK_VER }}-r8.apk` | R8 版,代码缩减+混淆,体积更小 | 想要更小的包、或者不想让人随手反编译 |
+
+            两个包**同签名、同 applicationId、同 versionCode**，所以可以互相覆盖安装，随时换回来。
+            功能完全一致；R8 版若出现异常，先用普通版复现一次，能区分是"功能问题"还是"混淆引起的问题"。
+
             ## 安装
 
-            1. 下载本页附件里的 APK 安装（需已装好并启用 LSPosed）
+            1. 下载上面任意一个 APK 安装（需已装好并启用 LSPosed）
             2. LSPosed 中启用本模块，作用域勾选「智慧决策服务」（`com.oplus.metis`）
             3. **给 metis 开后台启动资格**（否则点卡片会「完全没反应」）：
                ```sh
@@ -193,7 +268,7 @@ jobs:
 
             > 签名说明：本包与作者本机构建的同版本包签名不同，两者不能互相覆盖安装。
             >
-            > 本包签名证书 SHA-256：`${{ env.APK_CERT_SHA256 }}`
+            > 本包签名证书 SHA-256（普通版 / R8 版一致）：`${{ env.APK_CERT_SHA256 }}`
             >
             > 升级前对照上一版 Release 里的这一行：**相同就能直接覆盖安装**，
             > 不同则需先卸载（LSPosed 激活与配置要重配一次）。

@@ -138,10 +138,20 @@ su -c cmd appops set com.oplus.metis SYSTEM_ALERT_WINDOW default
 ```bat
 gradlew assembleDebug      :: 产物 app\build\outputs\apk\debug\app-debug.apk
 gradlew assembleRelease    :: R8 混淆 + release 签名
+gradlew assembleR8         :: R8 版（同 release 一样的缩减/混淆，但沿用 debug 签名，便于覆盖安装）
 gradlew testDebugUnitTest  :: 策略层单元测试
 ```
 
 - 构建后自动执行 `verifyXposedMetadata` 任务,断言 APK 内存在 `META-INF/xposed/` 三件套;
+- **每个版本发布两个包**:`FluidCloudRedirect-Pro-<版本>.apk`(普通版)与
+  `FluidCloudRedirect-Pro-<版本>-r8.apk`(R8 版,代码缩减+混淆)。两者同签名、
+  同 applicationId、同 versionCode,可互相覆盖安装。R8 版由 `app` 模块的 `r8` buildType 产出
+  (`gradlew assembleR8`),版本号取自 `app/build.gradle.kts` 的 `versionName`;
+- **R8 版的 keep 规则在 `app/src/main/keepRules/*.keep`**(AGP 9.3+ 的新约定,不再用
+  `proguardFiles`)。其中 `rules.keep` 开头就写明:`META-INF/xposed/java_init.list` 的入口类
+  在代码中零引用,不按名字 keep 就会被 R8 当死代码删掉,表现为"模块装了但完全不生效";
+- Gradle 默认产物永远叫 `app-debug.apk` / `app-release.apk`,几个版本下载到手机文件夹里
+  全重名,分不清谁新谁旧,所以工作流里多了一步按版本号改名;
 - release 签名读取根目录 `keystore.properties`(不入库)。自建签名:生成自己的 keystore 后按以下格式写 `keystore.properties` 即可,并同步修改 `app/build.gradle.kts` 的引用(工程已内置读取逻辑):
 
   ```properties

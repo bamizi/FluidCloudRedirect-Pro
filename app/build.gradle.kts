@@ -35,8 +35,8 @@ android {
         applicationId = "com.mo.fkLTY.pro"
         minSdk = 29
         targetSdk = 37
-        versionCode = 34
-        versionName = "1.2.15"
+        versionCode = 35
+        versionName = "1.2.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -71,6 +71,31 @@ android {
             }
             if (keystoreProps.isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
+            }
+        }
+
+        /**
+         * R8 版:额外产出一个开了 R8(缩减+混淆)的包,与普通版并存发布,由用户自己选。
+         *
+         * 关键约束:
+         * - 与普通版**同 applicationId、同签名**,所以两者能互相覆盖安装,也可以随时换回来;
+         *   代价是不能同时装两个(本来也没必要)。
+         * - versionCode / versionName 与普通版完全一致,只在 Release 的文件名上区分(`-r8`),
+         *   否则"同一版两个 versionName"会让排障时对不上号。
+         * - isDebuggable 关掉:R8 版是给日常用的,不是调试包。
+         * - keep 规则在 src/main/keepRules/*.keep。**注意 java_init.list 里的入口类必须
+         *   按名字 keep**,否则 R8 会把这个在代码里零引用的类当死代码删掉,模块直接不加载。
+         */
+        create("r8") {
+            isDebuggable = false
+            signingConfig = if (keystoreProps.isNotEmpty()) {
+                signingConfigs.getByName("release")
+            } else {
+                // CI 里 debug 钥匙库由 DEBUG_KEYSTORE 固定,保证每次构建同一个签名
+                signingConfigs.getByName("debug")
+            }
+            optimization {
+                enable = true
             }
         }
     }
@@ -137,6 +162,6 @@ val verifyXposedMetadata = tasks.register("verifyXposedMetadata") {
     }
 }
 
-tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }.configureEach {
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" || it.name == "assembleR8" }.configureEach {
     finalizedBy(verifyXposedMetadata)
 }
