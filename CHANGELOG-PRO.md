@@ -34,6 +34,20 @@
 被硬套成新的不一致；另外新增目标 App 可用性校验（`BrowserAvailability.isAvailable`），
 目标没装就一个字都不动（改了文案却打不开，比不改更糟）。
 
+真机实测（PLK110，2026-10-25 09:34）确认生效：
+
+```
+seedling[build]: 引导安装卡改文案 fields=4
+  (按钮「去安装」->「打开夸克网盘」,
+   标题「安装“夸克”查看」->「打开“夸克网盘”查看」,
+   副标题「前往一加软件商店安装」->「已安装夸克网盘，点击直接打开」,
+   胶囊「安装“夸克”查看」)
+```
+
+推给 SystemUI 的 `businessData.cardTitle` / `capsTitle` / `cardSubTitle` 同步为新文案；
+点击后 `BAL_ALLOW_SAW_PERMISSION`、`result code=0`，前台落
+`com.quark.clouddrive/com.ucpro.BrowserActivity`。证据见文档 §17.7。
+
 ## 1.2.12（换更准的切入点：安装卡片自己的文案方法）
 
 1.2.11 用 `Seedling$Builder.build()` 改按钮文案，真机上钩子装上了、但 `build()` 那条路没被走到
