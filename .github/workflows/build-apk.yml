@@ -222,14 +222,17 @@ jobs:
           fi
           OUT=/tmp/gradle-errors.txt
           : > "$OUT"
-          # Kotlin 编译错误 / Gradle 配置错误 / 失败摘要，各抓一段
-          grep -m 40 -E "^(e|w): |^\* What went wrong|^FAILURE: |^Execution failed for task" "$LOG" >> "$OUT" 2>/dev/null
-          grep -m 3 -A 10 "What went wrong" "$LOG" >> "$OUT" 2>/dev/null
+          # 1) 编译错误：Kotlin 可能写成 "e: file:///x.kt:12:5 ..."，也可能写成 "x.kt:12:5: error: ..."
+          grep -m 40 -E "^(e|w): |\.kt:[0-9]+:[0-9]+" "$LOG" >> "$OUT" 2>/dev/null
+          # 2) Gradle 失败摘要
+          grep -m 6 -A 6 "What went wrong" "$LOG" >> "$OUT" 2>/dev/null
+          grep -m 4 -E "^FAILURE: |^Execution failed for task|^> " "$LOG" >> "$OUT" 2>/dev/null
+          # 3) 兜底：截尾
           if [ ! -s "$OUT" ]; then
-            tail -n 80 "$LOG" >> "$OUT"
+            tail -n 150 "$LOG" >> "$OUT"
           fi
-          # 去重、截断、逐行转成 annotation
-          sort -u "$OUT" | head -n 50 | tr -d "\r" | while IFS= read -r line; do
+          # 按优先级输出（不排序，避免把编译错误排到后面被截掉）
+          head -n 50 "$OUT" | tr -d "\r" | while IFS= read -r line; do
             [ -z "$line" ] && continue
             echo "::error::${line}"
           done
