@@ -16,7 +16,7 @@ FluidCloudRedirect Pro — 归属与修改声明
   修改者    bamizi(https://github.com/bamizi)
   起算日期  2026-10-24
   基线版本  上游 v1.0.2(commit 见本仓库 git log 中上游提交)
-  当前版本  1.2.11
+  当前版本  1.2.12
 
   主要修改:
     1. 新增「自定义 URL → App 跳转规则」:域名(含子域名)/ URL 包含 / 正则三种匹配,
@@ -61,6 +61,9 @@ FluidCloudRedirect Pro — 归属与修改声明
    14. (1.2.11,2026-10-25) 新增显示层 hook `Seedling$Builder.build()`:卡片由
        Seedling.Builder 构建后交 SystemUI 渲染,与点击链路分离;本版在该层把「引导安装」
        卡片的按钮文案改为「打开<目标应用>」,只改文案不改跳转,失败仅记日志。
+   15. (1.2.12,2026-10-25) 1.2.11 的 Seedling 路径在真机上未被走到;改 hook
+       `SingleAppInstallPanel.onPositiveText()/onTitle()`(安装卡片自身的文案方法),
+       并通过 `getTextIntent()` 精确比对源包名后再替换文案。
 
 许可与再分发
 ------------

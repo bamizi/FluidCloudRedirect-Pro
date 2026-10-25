@@ -45,6 +45,8 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
     }
 
     private fun rewrite(builder: Any?, seedling: Any?) {
+        // 进过一次就留痕:用来判断 build() 这条路径到底有没有被走到
+        HookLog.once("seedling-entered", "seedling[build]: entered")
         if (seedling == null) return
         val prefs = HookLog.prefs() ?: return
         val swaps = PackageSwapEngine.load(prefs).filter { it.enabled && it.from != it.to }

@@ -127,6 +127,31 @@ class MainHook : XposedModule() {
         installParseIntentHooks(classLoader)
         installMonitorHook(classLoader)
         installSeedlingLabelHook(classLoader)
+        installInstallPanelHooks(classLoader)
+    }
+
+    /**
+     * E2 文案层 hook:安装卡片自己的两个文案方法。
+     *
+     * `SingleAppInstallPanel` 就是「引导安装」那张卡(真机 dex 已核对):
+     * `onPositiveText()` 给按钮文字、`onTitle()` 给标题,并且能用 `getTextIntent()`
+     * 拿到完整 TextIntent 来判定是不是我们配置的源 App。比 Seedling 那条路更直接。
+     */
+    private fun installInstallPanelHooks(classLoader: ClassLoader) {
+        for (methodName in PANEL_TEXT_METHODS) {
+            try {
+                val cls = classLoader.loadClass(CLASS_INSTALL_PANEL)
+                val method = cls.getDeclaredMethod(methodName)
+                hook(method).setExceptionMode(ExceptionMode.PROTECTIVE)
+                    .intercept(InstallPanelTextHooker(methodName))
+                HookLog.once("installed:panel:$methodName", "Hook installed: SingleAppInstallPanel.$methodName()")
+            } catch (t: Throwable) {
+                HookLog.once(
+                    "fail:panel:$methodName",
+                    "Cannot hook SingleAppInstallPanel.$methodName: ${t.javaClass.simpleName}: ${t.message}",
+                )
+            }
+        }
     }
 
     /**
@@ -198,6 +223,8 @@ class MainHook : XposedModule() {
         private const val CLASS_TEXT_INTENT = "com.oplus.textintent.distribution.bean.TextIntent"
         private const val CLASS_ZOOM_HANDLER = "com.oplus.textintent.common.utils.ZoomOpenHandler"
         private const val CLASS_CONTEXT_IMPL = "android.app.ContextImpl"
+        private const val CLASS_INSTALL_PANEL = "com.oplus.textintent.distribution.ui.SingleAppInstallPanel"
+        private val PANEL_TEXT_METHODS = arrayOf("onPositiveText", "onTitle")
         private val PARSE_INTENT_CLASSES = arrayOf(
             "com.oplus.textintent.distribution.bean.SchemeData",
             "com.oplus.textintent.distribution.bean.WebData",

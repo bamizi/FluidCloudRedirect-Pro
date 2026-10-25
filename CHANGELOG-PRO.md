@@ -1,5 +1,29 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.12（换更准的切入点：安装卡片自己的文案方法）
+
+1.2.11 用 `Seedling$Builder.build()` 改按钮文案，真机上钩子装上了、但 `build()` 那条路没被走到
+（日志里连 `seedling[build]: entered` 都没有）。继续翻 dex，找到更直接的类：
+
+```
+Lcom/oplus/textintent/distribution/ui/SingleAppInstallPanel;   // 就是「引导安装」这张卡
+    private final TextIntent textIntent;   getTextIntent(): TextIntent
+    onPositiveText(): String               // 「去安装」按钮文字
+    onTitle(): String                      // 「安装"夸克"查看」标题
+    onPackageChanged(String, Z) / onInstallClick(Z) / onShow() / onViewCreate(View)
+```
+
+于是新增 `hook/InstallPanelTextHooker.kt`，hook `onPositiveText()` 与 `onTitle()`：
+
+- `chain.proceed()` 拿到原文，含「安装」才继续
+- 用 `panel.getTextIntent()` 取 `packageName` / `intent.dataString`，
+  与「应用替换」的 `from` 精确比对（`pkg == from` 或 data 里含 `from`）
+- 命中才返回「打开<目标应用名>」，未命中/异常一律原样返回并留一行日志
+- 上下文用 `ActivityThread.currentApplication()` 反射获取，不依赖调用方传参
+
+同时给 `SeedlingLabelHooker` 加了入口留痕（`seedling[build]: entered`），
+用来确认那条路径到底有没有被走到。
+
 ## 1.2.11（卡片按钮文案：安装 → 打开）
 
 之前一直说"卡片上的字改不了"。这句话只在找错层的前提下成立——卡片不是 metis 现场画的，
