@@ -597,7 +597,15 @@ private fun AboutTab(
             onCheckedChange = onToggleVerboseLog,
             showDivider = true,
         )
-        AppRow(title = stringResource(R.string.diag_log_hint))
+        // 日志提示是一整句，不能当行标题（会被压成一行截断），单独排版
+        Text(
+            text = stringResource(R.string.diag_log_hint),
+            style = AppType.rowSub,
+            color = c.textSecondary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AppSpace.l, vertical = AppSpace.m),
+        )
     }
 
     AppSectionTitle("外观")

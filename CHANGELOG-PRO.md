@@ -55,6 +55,17 @@
 分段 `Role.Tab`；分组标题 `heading()`；装饰图标不给 contentDescription；
 动效时长读系统 `ANIMATOR_DURATION_SCALE`，用户关动画时全部归零。
 
+### 五、真机验证时修掉的两个 bug
+
+1. **桌面应用列表几乎为空**（老 bug，1.2.16 也存在）
+   `queryLaunchableApps()` 用了 `MATCH_DEFAULT_ONLY`，而绝大多数 App 的 `MAIN`/`LAUNCHER`
+   filter 不带 `CATEGORY_DEFAULT`（`com.quark.clouddrive` 就是只有 MAIN + LAUNCHER）。
+   结果这些应用全被过滤：替换行显示包名而不是 App 名，「选择 A/B」的列表点开是空的。
+   改为查询桌面应用时 `flags = 0`；浏览器查询仍保留 `MATCH_DEFAULT_ONLY`（那里是对的）。
+2. **诊断页的日志提示被截断**
+   那句"查看日志：LSPosed 管理器 → 日志，过滤 FluidRedirect"当成行标题渲染，
+   单行省略号截断。改为独立段落，允许换行。
+
 ## 1.2.16（发布产物带版本号命名 + 新增 R8 版）
 
 模块功能无改动，只改打包与发布产物。以前每个 Release 挂的都是一个改名前的

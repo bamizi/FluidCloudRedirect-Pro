@@ -198,7 +198,8 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         val pm = context.packageManager
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val byPackage = LinkedHashMap<String, ResolveInfo>()
-        for (ri in query(pm, launcher)) {
+        // 桌面应用：不加 MATCH_DEFAULT_ONLY，否则大部分应用查不出来（见 query 的注释）
+        for (ri in query(pm, launcher, flags = 0)) {
             val pkg = ri.activityInfo?.packageName ?: continue
             byPackage.putIfAbsent(pkg, ri)
         }
@@ -241,15 +242,24 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         }.sortedWith(compareBy(collator) { it.label })
     }
 
-    private fun query(pm: PackageManager, intent: Intent): List<ResolveInfo> = try {
+    /**
+     * @param flags 默认 MATCH_DEFAULT_ONLY；**查桌面应用时必须传 0**。
+     *
+     * 原因:绝大多数 App 的 MAIN/LAUNCHER filter 不带 CATEGORY_DEFAULT
+     * (例如 com.quark.clouddrive 就只有 MAIN + LAUNCHER),
+     * 用 MATCH_DEFAULT_ONLY 会把它们全部过滤掉,查出来的列表几乎是空的 ——
+     * 表现就是"应用替换"里显示包名而不是 App 名、选择 A/B 的列表点开是空的。
+     */
+    private fun query(
+        pm: PackageManager,
+        intent: Intent,
+        flags: Int = PackageManager.MATCH_DEFAULT_ONLY,
+    ): List<ResolveInfo> = try {
         if (Build.VERSION.SDK_INT >= 33) {
-            pm.queryIntentActivities(
-                intent,
-                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()),
-            )
+            pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(flags.toLong()))
         } else {
             @Suppress("DEPRECATION")
-            pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            pm.queryIntentActivities(intent, flags)
         }
     } catch (_: Throwable) {
         emptyList()
