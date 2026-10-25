@@ -20,6 +20,12 @@
 
     <!-- Browser list -->
     <string name="browser_list_header">Choose target browser</string>
+    <string name="footer_browser">Once selected, fluid cloud cards are sent to that browser. "Disable redirect" keeps the system default.</string>
+    <string name="section_swap">App swap (share codes)</string>
+    <string name="footer_swap">For share-code cards: the code carries no URL, so the fluid cloud already decided which app to open. Swap that app for the one you want here.</string>
+    <string name="rewrite_section">Card text</string>
+    <string name="rewrite_label_title">Rewrite card text</string>
+    <string name="rewrite_label_subtitle">When a swap matches, change the card\'s "Install / Go install" to "Open &lt;target app&gt;"</string>
     <string name="disable_redirect">Disable redirect</string>
     <string name="disable_redirect_subtitle">Leave fluid cloud cards untouched</string>
     <string name="no_browsers">No browser available</string>
@@ -45,6 +51,9 @@
     <string name="diag_scope">Scope: %1$s</string>
     <string name="diag_scope_none">empty</string>
     <string name="diag_log_hint">View logs: LSPosed manager → Logs, filter "FluidRedirect"</string>
+    <!-- 新增：分组行的左侧标签（右侧显示值） -->
+    <string name="diag_framework_label">Framework</string>
+    <string name="diag_scope_label">Scope</string>
 
     <!-- About -->
     <string name="about_title">About</string>
@@ -54,4 +63,6 @@
     <string name="about_usage_uninstalled">No config change needed after uninstalling the original app: when the card turns into an "install" prompt, it is still routed to the swap target instead of the app store.</string>
     <string name="about_note">After installing or updating, stop com.oplus.metis once (or reboot) so the hooks load.</string>
     <string name="about_version">%1$s (%2$s)</string>
+    <string name="card_text_saved">Card text saved — copy the share code again to see it</string>
+    <string name="about_version_label">Version</string>
 </resources>

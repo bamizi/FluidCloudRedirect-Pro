@@ -3,6 +3,7 @@ package com.mo.fkLTY.hook
 import android.content.Context
 import com.mo.fkLTY.engine.BrowserAvailability
 import com.mo.fkLTY.engine.PackageSwapEngine
+import com.mo.fkLTY.engine.RedirectPrefs
 import io.github.libxposed.api.XposedInterface
 
 /**
@@ -60,6 +61,8 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         HookLog.once("seedling-entered", "seedling[build]: entered")
         if (seedling == null) return
         val prefs = HookLog.prefs() ?: return
+        // 开关：「应用替换」页里的「改卡片文字」，默认开
+        if (!prefs.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true)) return
         val swaps = PackageSwapEngine.load(prefs).filter { it.enabled && it.from != it.to }
         if (swaps.isEmpty()) return
 
@@ -97,36 +100,42 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
             if (!BrowserAvailability.isAvailable(context, swap.to)) continue
 
             val label = appLabel(context, swap.to) ?: swap.to
-            // 1.2.14 去掉"查看"与引号;1.2.15 按钮进一步压到两个字,目标 App 名交给标题去说
-            val openText = "打开$label"
-            val newButton = "打开"
-            val newTitle = openText
-            val newSubTitle = "点击$openText"
+            // 文案全部来自用户配置（应用替换页 → 卡片文字），{app} 已替换成目标应用名。
+            // 任一字段留空 = 该项不动，保留 metis 原文案。
+            val text = RedirectPrefs.cardText(prefs).resolve(label)
+            val newButton = text.button
+            val newTitle = text.title
+            val newSubTitle = text.subtitle
+            val newCaps = text.caps
 
             var changed = 0
-            if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
-            if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newButton)) changed++
-            if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newButton)) changed++
+            if (newButton.isNotBlank()) {
+                if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
+                if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newButton)) changed++
+                if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newButton)) changed++
+            }
 
             /*
              * 标题 / 胶囊标题 / 胶囊直显文字:仍写着"安装"的才改。
              * 不无条件覆盖的原因:metis 在不同场景会给这三处换成别的文案(如"打开查看"),
-             * 硬套成"打开X查看"反而制造新的不一致。
+             * 硬套自定义文字反而制造新的不一致。
              */
-            if (title != null && title.contains("安装")) {
+            if (newTitle.isNotBlank() && title != null && title.contains("安装")) {
                 if (set(ciCls, cardInfo, "setCardTitle", newTitle)) changed++
             }
             val capsTitle = str(ciCls, cardInfo, "getCapsTitle")
-            if (capsTitle != null && capsTitle.contains("安装")) {
-                if (set(ciCls, cardInfo, "setCapsTitle", newTitle)) changed++
-            }
             val capsDirect = str(ciCls, cardInfo, "getCapsDirectText")
-            if (capsDirect != null && capsDirect.contains("安装")) {
-                if (set(ciCls, cardInfo, "setCapsDirectText", newTitle)) changed++
+            if (newCaps.isNotBlank()) {
+                if (capsTitle != null && capsTitle.contains("安装")) {
+                    if (set(ciCls, cardInfo, "setCapsTitle", newCaps)) changed++
+                }
+                if (capsDirect != null && capsDirect.contains("安装")) {
+                    if (set(ciCls, cardInfo, "setCapsDirectText", newCaps)) changed++
+                }
             }
             // 副标题是"前往一加软件商店安装"这类诱导安装话术,目标 App 已装就该说清楚
             val subTitle = str(ciCls, cardInfo, "getCardSubTitle")
-            if (subTitle != null && subTitle.contains("安装")) {
+            if (newSubTitle.isNotBlank() && subTitle != null && subTitle.contains("安装")) {
                 if (set(ciCls, cardInfo, "setCardSubTitle", newSubTitle)) changed++
             }
 

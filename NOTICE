@@ -16,7 +16,7 @@ FluidCloudRedirect Pro — 归属与修改声明
   修改者    bamizi(https://github.com/bamizi)
   起算日期  2026-10-24
   基线版本  上游 v1.0.2(commit 见本仓库 git log 中上游提交)
-  当前版本  1.2.16
+  当前版本  1.2.17
 
   主要修改:
     1. 新增「自定义 URL → App 跳转规则」:域名(含子域名)/ URL 包含 / 正则三种匹配,
@@ -83,6 +83,10 @@ FluidCloudRedirect Pro — 归属与修改声明
        (即第 8 行原有的"按名保留 `META-INF/xposed/java_init.list` 模块入口类"规则得以沿用,
        该类在代码中零引用,不 keep 会被 R8 当死代码删除,导致模块无法加载);CI 产物统一改为
        `FluidCloudRedirect-Pro-<版本>.apk` / `-<版本>-r8.apk` 命名,并校验两包签名一致。
+   20. (1.2.17,2026-10-25) 设置界面重做(不影响 hook 逻辑):改为三页分段导航(浏览器 /
+       应用替换 / 关于),设计令牌集中于 `ui/theme/Tokens.kt`,组件自绘,明暗两套配色;
+       新增卡片文字自定义(`card_text_title/subtitle/button/caps` 四个键,`{app}` 占位目标
+       应用名,留空表示该项不改),以及总开关 `rewrite_card_label`。
 
 许可与再分发
 ------------

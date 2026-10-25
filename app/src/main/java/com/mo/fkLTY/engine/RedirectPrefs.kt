@@ -30,6 +30,45 @@ object RedirectPrefs {
     /** 详细日志(hook 端 verbose 输出,含监控位) */
     const val KEY_VERBOSE_LOG = "verbose_log"
 
+    /**
+     * 卡片改字:命中「应用替换」时,把卡片上的"安装/去安装"换成自定义文字。
+     * 默认开——改字是为了让卡片和实际行为一致,关掉只会让人以为卡片还是坏的。
+     */
+    const val KEY_REWRITE_CARD_LABEL = "rewrite_card_label"
+
+    // ---- 自定义卡片文字(四个字段各存一个键,不拼串,省掉转义与解析) ----
+
+    /** 卡片标题,`{app}` 会替换成目标应用名 */
+    const val KEY_CARD_TEXT_TITLE = "card_text_title"
+
+    /** 卡片副标题 */
+    const val KEY_CARD_TEXT_SUBTITLE = "card_text_subtitle"
+
+    /** 按钮文字(主按钮 / 左右按钮共用) */
+    const val KEY_CARD_TEXT_BUTTON = "card_text_button"
+
+    /** 胶囊文字(状态栏气泡上的那句) */
+    const val KEY_CARD_TEXT_CAPS = "card_text_caps"
+
+    /** 占位符:运行时替换为目标应用的显示名 */
+    const val PLACEHOLDER_APP = "{app}"
+
+    const val DEFAULT_CARD_TITLE = "打开${PLACEHOLDER_APP}"
+    const val DEFAULT_CARD_SUBTITLE = "点击打开${PLACEHOLDER_APP}"
+    const val DEFAULT_CARD_BUTTON = "打开"
+    const val DEFAULT_CARD_CAPS = "打开${PLACEHOLDER_APP}"
+
+    /**
+     * 读取自定义卡片文字。留空的字段保持空串——钩子侧据此判断"这一项不改",
+     * 而不是偷偷回退成默认值(用户清空某一行,通常就是不想改那一行)。
+     */
+    fun cardText(prefs: SharedPreferences): CardText = CardText(
+        title = prefs.getString(KEY_CARD_TEXT_TITLE, null) ?: DEFAULT_CARD_TITLE,
+        subtitle = prefs.getString(KEY_CARD_TEXT_SUBTITLE, null) ?: DEFAULT_CARD_SUBTITLE,
+        button = prefs.getString(KEY_CARD_TEXT_BUTTON, null) ?: DEFAULT_CARD_BUTTON,
+        caps = prefs.getString(KEY_CARD_TEXT_CAPS, null) ?: DEFAULT_CARD_CAPS,
+    )
+
     /** 规则开关集;设置页与 hook 端共用同一组键与默认值 */
     fun toggles(prefs: SharedPreferences): RuleToggles = RuleToggles(
         protocol = prefs.getBoolean(KEY_RULE_PROTOCOL, true),
@@ -46,3 +85,24 @@ data class RuleToggles(
     val heytapHttp: Boolean,
     val anyBrowserCard: Boolean,
 )
+
+/**
+ * 卡片上四处可自定义的文字。
+ *
+ * 用 `{app}` 占位目标应用名,所以换目标 App 时文案会自动跟着变,不用手改。
+ * 任一项留空 = 该项不动(保留 metis 原文案)。
+ */
+data class CardText(
+    val title: String = RedirectPrefs.DEFAULT_CARD_TITLE,
+    val subtitle: String = RedirectPrefs.DEFAULT_CARD_SUBTITLE,
+    val button: String = RedirectPrefs.DEFAULT_CARD_BUTTON,
+    val caps: String = RedirectPrefs.DEFAULT_CARD_CAPS,
+) {
+    /** 把 `{app}` 换成实际应用名 */
+    fun resolve(appLabel: String): CardText = CardText(
+        title = title.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
+        subtitle = subtitle.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
+        button = button.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
+        caps = caps.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
+    )
+}

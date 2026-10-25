@@ -21,6 +21,12 @@
 
     <!-- 浏览器列表 -->
     <string name="browser_list_header">选择目标浏览器</string>
+    <string name="footer_browser">选中后,流体云卡片会改投到该浏览器。「禁用重定向」保持系统默认行为。</string>
+    <string name="section_swap">应用替换(复制口令)</string>
+    <string name="footer_swap">用于「复制口令」这类卡片:口令里没有网址,流体云直接认定要打开哪个 App。在这里把那个 App 换成你想要的 App 即可。</string>
+    <string name="rewrite_section">卡片文字</string>
+    <string name="rewrite_label_title">改卡片文字</string>
+    <string name="rewrite_label_subtitle">命中替换时,把卡片上的「安装 / 去安装」换成「打开&lt;目标应用&gt;」</string>
     <string name="disable_redirect">禁用重定向</string>
     <string name="disable_redirect_subtitle">不干预流体云卡片</string>
     <string name="no_browsers">未找到可用浏览器</string>
@@ -46,6 +52,9 @@
     <string name="diag_scope">作用域:%1$s</string>
     <string name="diag_scope_none">空</string>
     <string name="diag_log_hint">查看日志:LSPosed 管理器 → 日志,过滤 "FluidRedirect"</string>
+    <!-- 新增:分组行的左侧标签(右侧显示值) -->
+    <string name="diag_framework_label">框架</string>
+    <string name="diag_scope_label">作用域</string>
 
     <!-- 关于 -->
     <string name="about_title">关于</string>
@@ -55,4 +64,6 @@
     <string name="about_usage_uninstalled">原 App 卸载后也不用改配置:卡片变成「去安装」时,同样会改投到替换目标,不会跳应用商店。</string>
     <string name="about_note">首次安装或升级后,需停一次 com.oplus.metis(或重启手机),钩子才会加载。</string>
     <string name="about_version">%1$s (%2$s)</string>
+    <string name="card_text_saved">卡片文字已保存,重新复制一次口令即可看到</string>
+    <string name="about_version_label">版本</string>
 </resources>

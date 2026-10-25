@@ -3,6 +3,7 @@ package com.mo.fkLTY.hook
 import android.content.Context
 import com.mo.fkLTY.engine.BrowserAvailability
 import com.mo.fkLTY.engine.PackageSwapEngine
+import com.mo.fkLTY.engine.RedirectPrefs
 import io.github.libxposed.api.XposedInterface
 
 /**
@@ -42,6 +43,8 @@ class InstallPanelTextHooker(private val which: String) : XposedInterface.Hooker
             val data = reflected.intent?.dataString
 
             val prefs = HookLog.prefs() ?: return original
+            // 与 SeedlingLabelHooker 共用同一个开关（应用替换页里的「改卡片文字」）
+            if (!prefs.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true)) return original
             val swap = PackageSwapEngine.load(prefs).firstOrNull { s ->
                 s.enabled && s.from != s.to &&
                     (pkg == s.from || (data != null && data.contains(s.from, ignoreCase = true)))
@@ -56,7 +59,11 @@ class InstallPanelTextHooker(private val which: String) : XposedInterface.Hooker
             val context = AppContext.get()
             if (context != null && !BrowserAvailability.isAvailable(context, swap.to)) return original
             val label = context?.let { appLabel(it, swap.to) } ?: swap.to
-            val newText = "打开$label"
+            // 与 SeedlingLabelHooker 共用同一份自定义文案；留空则不改
+            val text = RedirectPrefs.cardText(prefs).resolve(label)
+            val newText = text.button.takeIf { it.isNotBlank() }
+                ?: text.title.takeIf { it.isNotBlank() }
+                ?: return original
             HookLog.card("install-panel[$which]: 「$text」-> 「$newText」 (from=${swap.from}, pkg=$pkg)")
             return newText
         } catch (t: Throwable) {

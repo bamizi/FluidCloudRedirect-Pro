@@ -1,34 +1,23 @@
 package com.mo.fkLTY.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 
-// Set of Material typography styles to start with
+/**
+ * Material Typography 映射到本项目的字号体系。
+ *
+ * 自绘组件直接引用 `AppType`；这里映射是为了让偶尔用到的 Material 文本
+ * （对话框、进度指示等）不跳回 Material 默认值，保持整屏只有一套节奏。
+ */
 val Typography = Typography(
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
-    )
-    /* Other default text styles to override
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
-    ),
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
-    )
-    */
+    displaySmall = AppType.pageTitle,
+    headlineSmall = AppType.heroValue,
+    titleLarge = AppType.pageTitle,
+    titleMedium = AppType.rowTitle,
+    titleSmall = AppType.sectionTitle,
+    bodyLarge = AppType.rowTitle,
+    bodyMedium = AppType.rowSub,
+    bodySmall = AppType.rowSub,
+    labelLarge = AppType.button,
+    labelMedium = AppType.chip,
+    labelSmall = AppType.mono,
 )

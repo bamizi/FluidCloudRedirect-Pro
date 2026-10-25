@@ -112,4 +112,15 @@ object PrefsBridge {
     }
 
     fun saveVerboseLog(value: Boolean): Boolean = saveRule(RedirectPrefs.KEY_VERBOSE_LOG, value)
+
+    /** 保存自定义卡片文字(四个字段一起写,commit 一次) */
+    fun saveCardText(text: com.mo.fkLTY.engine.CardText): Boolean {
+        val prefs = _state.value.prefs ?: return false
+        return prefs.edit()
+            .putString(RedirectPrefs.KEY_CARD_TEXT_TITLE, text.title)
+            .putString(RedirectPrefs.KEY_CARD_TEXT_SUBTITLE, text.subtitle)
+            .putString(RedirectPrefs.KEY_CARD_TEXT_BUTTON, text.button)
+            .putString(RedirectPrefs.KEY_CARD_TEXT_CAPS, text.caps)
+            .commit()
+    }
 }
