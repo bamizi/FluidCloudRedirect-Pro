@@ -1,5 +1,32 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.11（卡片按钮文案：安装 → 打开）
+
+之前一直说"卡片上的字改不了"。这句话只在找错层的前提下成立——卡片不是 metis 现场画的，
+而是用 `Seedling.Builder` 构建好、交给 SystemUI 的 SeedlingCard 窗口渲染的，和点击走的
+`TextIntent.invoke` / `startActivity` 是两条路。改 Intent 只能改"点了去哪"。
+
+本版从本机 metis APK（`/product/priv-app/Metis/Metis.apk`，9 个 dex）里核对到符号：
+
+```
+Lcom/oplus/textintent/pantanal/Seedling$Builder;
+    build()             -> Lcom/oplus/textintent/pantanal/Seedling;
+    buttonLabel(String), cardTitle(String), capsTitle(String) …
+Lcom/oplus/textintent/pantanal/bean/CardInfo;      // Kotlin data class,有 get/set
+    setButtonText / setLeftButtonText / setRightButtonText(String)
+```
+
+新增 `hook/SeedlingLabelHooker.kt`，hook `Seedling$Builder.build()`：
+
+- 在 `build()` 返回后读 `Seedling.getCardInfo()` / `getData()`，此时卡片信息已完整
+- **只碰"引导安装"类卡片**（按钮或标题里含「安装」），其余卡片一个字不动
+- 且要求卡片内容里出现「应用替换」的源包名，才把按钮改成「打开<目标 App 名称>」
+- 改完记一行 `seedling[build]: …`，未匹配时也记一行，便于排查
+- 全程反射 + 每步 try-catch，`ExceptionMode.PROTECTIVE`，失败只记日志，不影响 metis
+
+已知限制：卡片**标题**（如“安装"夸克"查看”）本次没动，只改按钮；标题字段同样是
+`setCardTitle(String)`，等确认按钮这条路稳定后再一起改。
+
 ## 1.2.10（补上必需的系统前提，并让日志直接告诉你缺什么）
 
 1.2.9 修好 Intent 之后，真机上又出现"点了没反应"。这次日志把原因写得很清楚：

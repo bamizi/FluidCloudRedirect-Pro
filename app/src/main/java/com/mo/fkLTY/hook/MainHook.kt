@@ -126,6 +126,28 @@ class MainHook : XposedModule() {
         installInvokeHook(classLoader)
         installParseIntentHooks(classLoader)
         installMonitorHook(classLoader)
+        installSeedlingLabelHook(classLoader)
+    }
+
+    /**
+     * E 显示层 hook:`Seedling.Builder.build()` —— 卡片构建完成、尚未交给 SystemUI 时改按钮文案。
+     *
+     * 为什么要这一层:卡片由 `Seedling.Builder` 构建后交给 SystemUI 的 SeedlingCard 渲染,
+     * 与点击走的 Intent 是两条路。改 Intent 只能改"点了去哪",改不了卡上写的字。
+     * 具体符号(class/method)已从本机 metis APK 的 dex 里核对过,见 SeedlingLabelHooker 的注释。
+     */
+    private fun installSeedlingLabelHook(classLoader: ClassLoader) {
+        try {
+            val cls = classLoader.loadClass("com.oplus.textintent.pantanal.Seedling\$Builder")
+            val method = cls.getDeclaredMethod("build")
+            hook(method).setExceptionMode(ExceptionMode.PROTECTIVE).intercept(SeedlingLabelHooker())
+            HookLog.once("installed:seedling", "Hook installed: Seedling\$Builder.build()")
+        } catch (t: Throwable) {
+            HookLog.once(
+                "fail:seedling",
+                "Cannot hook Seedling\$Builder.build: ${t.javaClass.simpleName}: ${t.message}",
+            )
+        }
     }
 
     /** A 主 hook:TextIntent.invoke(Context) */
