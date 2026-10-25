@@ -83,8 +83,9 @@ android {
          * - versionCode / versionName 与普通版完全一致,只在 Release 的文件名上区分(`-r8`),
          *   否则"同一版两个 versionName"会让排障时对不上号。
          * - isDebuggable 关掉:R8 版是给日常用的,不是调试包。
-         * - keep 规则在 src/main/keepRules/*.keep。**注意 java_init.list 里的入口类必须
-         *   按名字 keep**,否则 R8 会把这个在代码里零引用的类当死代码删掉,模块直接不加载。
+         * - keep 规则放在 src/main/keepRules 目录下的 .keep 文件里。**注意 java_init.list
+         *   里的入口类必须按名字 keep**,否则 R8 会把这个在代码里零引用的类当死代码删掉,
+         *   模块直接不加载。
          */
         create("r8") {
             isDebuggable = false
