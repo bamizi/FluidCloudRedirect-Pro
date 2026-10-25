@@ -1,7 +1,7 @@
 id=fkLTY_pro
 name=流体云重定向 Pro
-version=1.2.13
-versionCode=32
+version=1.2.14
+versionCode=33
 author=bamizi · 原作 fkLTY
 description=流体云卡片改投:选一个浏览器接管网页卡片;「应用替换」可把"打开 A"改成打开 B(如复制夸克口令后打开夸克网盘)。配置即时生效,无需重启智慧决策服务
 minApiVersion=101

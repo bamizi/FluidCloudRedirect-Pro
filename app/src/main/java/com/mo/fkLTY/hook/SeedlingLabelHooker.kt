@@ -30,6 +30,9 @@ import io.github.libxposed.api.XposedInterface
  * 卡片自相矛盾。所以标题三处 + 副标题一并改写(仅当原文含"安装"时)。
  * 实测证据见文档 §17.5。
  *
+ * 1.2.14 按实际使用体验收敛文案长度:「打开“夸克网盘”查看」在卡片上偏挤,
+ * 改为 标题/按钮 = 「打开夸克网盘」、副标题 = 「点击打开夸克网盘」。
+ *
  * 选 `build()` 而不是 `buttonLabel(String)` 的原因:后者被调用时还没设动作/包名,
  * 无法判断"这张卡是不是我们关心的那个源 App";`build()` 返回的 Seedling 已经带着
  * 完整的 CardInfo + ActionData,可以按包名严格匹配再动手,不会误伤别的安装卡。
@@ -93,9 +96,11 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
             if (!BrowserAvailability.isAvailable(context, swap.to)) continue
 
             val label = appLabel(context, swap.to) ?: swap.to
-            val newButton = "打开$label"
-            val newTitle = "打开“$label”查看"
-            val newSubTitle = "已安装$label，点击直接打开"
+            // 1.2.14:按用户要求去掉"查看"与引号,标题与按钮同文,副标题独立一句
+            val openText = "打开$label"
+            val newButton = openText
+            val newTitle = openText
+            val newSubTitle = "点击$openText"
 
             var changed = 0
             if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
