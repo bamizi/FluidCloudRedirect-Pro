@@ -273,14 +273,15 @@ fun AppRow(
     disabledLabel: Boolean = false,
     showDivider: Boolean = false,
     dividerIndent: Dp = AppSpace.l,
+    // 外部 selectable/toggleable 共用此源，按下时整行底色才能跟着变
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
     val c = AppTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+    val pressed by interactionSource.collectIsPressedAsState()
 
     val clickModifier = if (onClick != null) {
         Modifier.clickable(
-            interactionSource = interaction,
+            interactionSource = interactionSource,
             indication = null,
             enabled = enabled,
             role = role,
@@ -346,13 +347,15 @@ fun AppRuleRow(
     modifier: Modifier = Modifier,
     showDivider: Boolean = false,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     AppRow(
         title = title,
         subtitle = subtitle,
+        interactionSource = interaction,
         modifier = modifier
             .toggleable(
                 value = checked,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interaction,
                 indication = null,
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
@@ -380,13 +383,19 @@ fun AppChoiceRow(
     showDivider: Boolean = false,
 ) {
     val c = AppTheme.colors
+    // selectable 的默认 Ripple 在未裁剪容器上会画成灰色直角矩形（ColorOS 上闪现），
+    // 这里显式关掉；按下反馈改为与 AppRow 共用 interactionSource，整行底色加深。
+    val interaction = remember { MutableInteractionSource() }
     AppRow(
         title = title,
         subtitle = subtitle,
+        interactionSource = interaction,
         modifier = modifier.selectable(
             selected = selected,
             enabled = enabled,
             role = Role.RadioButton,
+            interactionSource = interaction,
+            indication = null,
             onClick = onClick,
         ),
         leading = if (icon != null) {
@@ -478,8 +487,13 @@ fun AppSegment(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 38.dp)
+                        // 必须关掉默认 Ripple：未裁剪的 Ripple 在 ColorOS 上会画成
+                        // 一块直角的灰色半透明矩形（点击瞬间闪现），就是用户截图里那个。
+                        // 按下反馈由滑块/文字色承担，不需要系统水波。
                         .selectable(
                             selected = active,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
                             role = Role.Tab,
                             onClick = { onSelect(index) },
                         )
