@@ -1,5 +1,8 @@
 package com.mo.fkLTY.ui.picker
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +27,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,16 +36,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mo.fkLTY.engine.PackageSwap
+import com.mo.fkLTY.ui.theme.AppMotion
 import com.mo.fkLTY.ui.theme.AppRadius
 import com.mo.fkLTY.ui.theme.AppSpace
 import com.mo.fkLTY.ui.theme.AppTheme
 import com.mo.fkLTY.ui.theme.AppType
+import com.mo.fkLTY.ui.theme.motionDuration
+import com.mo.fkLTY.ui.theme.rememberReduceMotion
 
 /**
  * 应用替换编辑器（现代原生）。
@@ -60,8 +68,15 @@ fun PackageSwapEditor(
 ) {
     var showEditor by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<PackageSwap?>(null) }
+    val reduceMotion = rememberReduceMotion()
 
-    AppCard(padded = false) {
+    // 增删替换时卡片高度平滑收放，而不是"跳"一下
+    AppCard(
+        modifier = Modifier.animateContentSize(
+            tween(motionDuration(AppMotion.regular, reduceMotion)),
+        ),
+        padded = false,
+    ) {
         if (swaps.isEmpty()) {
             Text(
                 text = "还没有替换规则。点下面的按钮添加一条。",
@@ -201,6 +216,15 @@ private fun AppDialogShell(
     actions: @Composable RowScope.() -> Unit,
 ) {
     val c = AppTheme.colors
+    val reduceMotion = rememberReduceMotion()
+    // 弹窗进入：轻缩放 + 淡入。退场不做（Dialog 卸载即刻，做退场要延迟 dismiss，得不偿失）
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val appear by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(motionDuration(AppMotion.quick, reduceMotion)),
+        label = "dialogAppear",
+    )
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -208,6 +232,12 @@ private fun AppDialogShell(
         Column(
             modifier = Modifier
                 .padding(horizontal = AppSpace.xxl)
+                .graphicsLayer {
+                    alpha = appear
+                    val scale = 0.94f + 0.06f * appear
+                    scaleX = scale
+                    scaleY = scale
+                }
                 .widthIn(max = 420.dp)
                 .clip(RoundedCornerShape(AppRadius.card))
                 .background(c.surface)

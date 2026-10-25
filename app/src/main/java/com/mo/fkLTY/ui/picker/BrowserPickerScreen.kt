@@ -1,8 +1,17 @@
 package com.mo.fkLTY.ui.picker
 
 import android.graphics.drawable.Drawable
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,17 +41,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -132,12 +139,31 @@ fun BrowserPickerScreen(
                 ),
             )
 
-            key(tab) {
+            // 页面切换：向左/向右轻推 + 淡入淡出。每页滚动位置各自保留，
+            // 切回来还能停在原来的位置（AnimatedContent 会为不同 targetState 各自保存状态）。
+            val reduceMotion = rememberReduceMotion()
+            val tabDur = motionDuration(AppMotion.regular, reduceMotion)
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    val dir = if (targetState > initialState) 1 else -1
+                    (
+                        fadeIn(tween(tabDur)) +
+                            slideInHorizontally(tween(tabDur)) { w -> dir * w / 16 }
+                        ) togetherWith (
+                        fadeOut(tween(tabDur)) +
+                            slideOutHorizontally(tween(tabDur)) { w -> -dir * w / 16 }
+                        )
+                },
+                label = "tabContent",
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) { currentTab ->
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .fillMaxSize()
+                        .verticalScroll(rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) })
                         .padding(
                             start = AppSpace.screenInset,
                             end = AppSpace.screenInset,
@@ -146,7 +172,7 @@ fun BrowserPickerScreen(
                         ),
                     verticalArrangement = Arrangement.spacedBy(AppSpace.m),
                 ) {
-                    when (tab) {
+                    when (currentTab) {
                         0 -> BrowserTab(
                             ui = ui,
                             onToggleRule = viewModel::toggleRule,
@@ -437,10 +463,12 @@ private fun CardTextEditor(
 
     val draft = CardText(title = title, subtitle = subtitle, button = button, caps = caps)
     val dirty = draft != current
+    // 每栏右侧提示的最终效果；模板里的 {app} 在这里展开，一眼能看出真机长什么样
+    val resolved = draft.resolve(previewLabel)
 
     AppCard {
         Text(
-            text = "用 {app} 代表目标应用名，换目标 App 时文案会自动跟着变；留空表示这一项不改。",
+            text = "用 {app} 代表目标应用名，换目标 App 时文案会自动跟着变；留空表示这一项不改。右侧灰色小字是最终显示效果。",
             style = AppType.rowSub,
             color = c.textSecondary,
         )
@@ -450,6 +478,7 @@ private fun CardTextEditor(
             label = "标题",
             value = title,
             placeholder = RedirectPrefs.DEFAULT_CARD_TITLE,
+            hint = if (title.isBlank()) "保持原文案" else "→ ${resolved.title}",
             onValueChange = { title = it },
         )
         Spacer(Modifier.height(AppSpace.m))
@@ -457,6 +486,7 @@ private fun CardTextEditor(
             label = "副标题",
             value = subtitle,
             placeholder = RedirectPrefs.DEFAULT_CARD_SUBTITLE,
+            hint = if (subtitle.isBlank()) "保持原文案" else "→ ${resolved.subtitle}",
             onValueChange = { subtitle = it },
         )
         Spacer(Modifier.height(AppSpace.m))
@@ -464,6 +494,7 @@ private fun CardTextEditor(
             label = "按钮",
             value = button,
             placeholder = RedirectPrefs.DEFAULT_CARD_BUTTON,
+            hint = if (button.isBlank()) "保持原文案" else "→ ${resolved.button}",
             onValueChange = { button = it },
         )
         Spacer(Modifier.height(AppSpace.m))
@@ -471,13 +502,14 @@ private fun CardTextEditor(
             label = "胶囊（状态栏气泡）",
             value = caps,
             placeholder = RedirectPrefs.DEFAULT_CARD_CAPS,
+            hint = if (caps.isBlank()) "保持原文案" else "→ ${resolved.caps}",
             onValueChange = { caps = it },
         )
 
         Spacer(Modifier.height(AppSpace.l))
         Text(text = "预览", style = AppType.sectionTitle, color = c.textSecondary)
         Spacer(Modifier.height(AppSpace.s))
-        CardPreview(text = draft.resolve(previewLabel), icon = previewIcon)
+        CardPreview(text = resolved, icon = previewIcon)
 
         Spacer(Modifier.height(AppSpace.l))
         Row(
@@ -706,25 +738,26 @@ private val BROWSER_RULE_SPECS = listOf(
     ),
 )
 
-/** 底部轻提示：深色胶囊 + 白字，明暗两套都能读 */
+/** 底部轻提示：深色胶囊 + 白字，明暗两套都能读。上滑淡入，不用时淡出 */
 @Composable
 private fun AppToast(text: String?, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
     val reduceMotion = rememberReduceMotion()
+    val dur = motionDuration(AppMotion.quick, reduceMotion)
     var lastText by remember { mutableStateOf("") }
     LaunchedEffect(text) {
         if (text != null) lastText = text
     }
-    val alpha by animateFloatAsState(
-        targetValue = if (text != null) 1f else 0f,
-        animationSpec = tween(motionDuration(AppMotion.quick, reduceMotion)),
-        label = "toastAlpha",
-    )
 
-    if (alpha > 0.01f && lastText.isNotEmpty()) {
+    AnimatedVisibility(
+        visible = text != null && lastText.isNotEmpty(),
+        enter = fadeIn(tween(dur)) + slideInVertically(tween(dur)) { it / 2 },
+        exit = fadeOut(tween(dur)) + slideOutVertically(tween(dur)) { it / 2 },
+        modifier = modifier,
+        label = "appToast",
+    ) {
         Row(
-            modifier = modifier
-                .graphicsLayer(alpha = alpha)
+            modifier = Modifier
                 .clip(RoundedCornerShape(AppRadius.pill))
                 .background(if (c.isDark) Color(0xFF2C2938) else Color(0xE61B1B21))
                 .padding(horizontal = AppSpace.l, vertical = AppSpace.m),

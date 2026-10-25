@@ -1,9 +1,17 @@
 package com.mo.fkLTY.ui.picker
 
 import android.graphics.drawable.Drawable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -128,10 +136,25 @@ fun AppSwitch(
     val c = AppTheme.colors
     val reduceMotion = rememberReduceMotion()
 
+    // 滑块用弹簧，比线性更接近原生手感；开了「减弱动态效果」就直接落位
     val knob by animateDpAsState(
         targetValue = if (checked) 23.dp else 3.dp,
-        animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.72f, stiffness = 520f)
+        },
         label = "appKnob",
+    )
+    val track by animateColorAsState(
+        targetValue = if (checked) c.primary else c.surfaceTonal,
+        animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+        label = "appSwitchTrack",
+    )
+    val trackBorder by animateColorAsState(
+        targetValue = if (checked) c.primary else c.outline,
+        animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+        label = "appSwitchTrackBorder",
     )
     val alpha by animateFloatAsState(
         targetValue = if (enabled) 1f else 0.45f,
@@ -163,8 +186,8 @@ fun AppSwitch(
                 .size(48.dp, 28.dp)
                 .graphicsLayer(alpha = alpha)
                 .clip(RoundedCornerShape(AppRadius.pill))
-                .background(if (checked) c.primary else c.surfaceTonal)
-                .border(1.dp, if (checked) c.primary else c.outline, RoundedCornerShape(AppRadius.pill)),
+                .background(track)
+                .border(1.dp, trackBorder, RoundedCornerShape(AppRadius.pill)),
         ) {
             Box(
                 modifier = Modifier
@@ -370,17 +393,23 @@ fun AppChoiceRow(
         } else {
             null
         },
-        trailing = if (selected) {
-            {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = c.primary,
-                    modifier = Modifier.size(20.dp),
-                )
+        trailing = {
+            // 固定占位，避免对勾出现/消失时整行文字跟着跳
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                AnimatedVisibility(
+                    visible = selected,
+                    enter = scaleIn(initialScale = 0.6f) + fadeIn(),
+                    exit = scaleOut(targetScale = 0.6f) + fadeOut(),
+                    label = "appCheck",
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = c.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
-        } else {
-            null
         },
         enabled = enabled,
         disabledLabel = !enabled,
@@ -399,6 +428,7 @@ fun AppSegment(
     modifier: Modifier = Modifier,
 ) {
     val c = AppTheme.colors
+    val reduceMotion = rememberReduceMotion()
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -409,20 +439,29 @@ fun AppSegment(
     ) {
         options.forEachIndexed { index, label ->
             val active = index == selectedIndex
+            // 选中块在三项之间平滑"浮起"，而不是硬切
+            val elevation by animateDpAsState(
+                targetValue = if (active) 2.dp else 0.dp,
+                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+                label = "segElevation",
+            )
+            val bg by animateColorAsState(
+                targetValue = if (active) c.surface else Color.Transparent,
+                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+                label = "segBg",
+            )
+            val fg by animateColorAsState(
+                targetValue = if (active) c.primary else c.textSecondary,
+                animationSpec = tween(durationMillis = motionDuration(AppMotion.quick, reduceMotion)),
+                label = "segFg",
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 38.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .then(
-                        if (active) {
-                            Modifier
-                                .shadow(2.dp, RoundedCornerShape(14.dp))
-                                .background(c.surface)
-                        } else {
-                            Modifier
-                        },
-                    )
+                    .shadow(elevation, RoundedCornerShape(14.dp))
+                    .background(bg)
                     .selectable(
                         selected = active,
                         role = Role.Tab,
@@ -434,7 +473,7 @@ fun AppSegment(
                 Text(
                     text = label,
                     style = AppType.segment,
-                    color = if (active) c.primary else c.textSecondary,
+                    color = fg,
                     maxLines = 1,
                 )
             }
@@ -459,8 +498,12 @@ fun AppButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) 0.98f else 1f,
-        animationSpec = tween(durationMillis = motionDuration(AppMotion.instant, reduceMotion)),
+        targetValue = if (pressed && enabled) 0.96f else 1f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.55f, stiffness = 700f)
+        },
         label = "appBtnScale",
     )
     val bg = container ?: c.primary
@@ -491,6 +534,9 @@ fun AppButton(
 /**
  * 通用输入框：标签在上、浅底圆角、主色光标。
  * 留空是合法状态（表示"这一项不改"），所以不做非空校验，也不自动回填默认值。
+ *
+ * `hint` 显示在标签右侧（灰色小字），用来标出这一栏**最终会变成什么**——
+ * 填的是 `{app}` 模板时，光看输入框不知道真机上长什么样。
  */
 @Composable
 fun AppTextField(
@@ -499,10 +545,24 @@ fun AppTextField(
     placeholder: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    hint: String? = null,
 ) {
     val c = AppTheme.colors
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(text = label, style = AppType.rowSub, color = c.textSecondary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = label, style = AppType.rowSub, color = c.textSecondary)
+            if (hint != null) {
+                Spacer(Modifier.weight(1f, fill = true))
+                Spacer(Modifier.width(AppSpace.s))
+                Text(
+                    text = hint,
+                    style = AppType.rowSub,
+                    color = c.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Spacer(Modifier.height(AppSpace.xs))
         Box(
             modifier = Modifier
@@ -539,13 +599,26 @@ fun AppChip(    text: String,
     modifier: Modifier = Modifier,
 ) {
     val c = AppTheme.colors
+    val reduceMotion = rememberReduceMotion()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.95f else 1f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(dampingRatio = 0.6f, stiffness = 700f)
+        },
+        label = "appChipScale",
+    )
     Box(
         modifier = modifier
             .heightIn(min = AppSpace.minTouchTarget)
+            .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(RoundedCornerShape(AppRadius.pill))
             .background(c.surfaceTonal)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
                 onClick = onClick,
