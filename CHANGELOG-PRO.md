@@ -63,13 +63,34 @@ AGP 9.3+ 的自定义 keep 规则要放在 `app/src/main/keepRules/*.keep`，旧
 
 本版发布产物：`FluidCloudRedirect-Pro-1.2.16.apk` 与 `FluidCloudRedirect-Pro-1.2.16-r8.apk`。
 
-> 状态：**已改好、尚未发布，R8 版也尚未在 CI 上实际构建过一次**。
-> 按用户要求这次不发版，改动留在工作区；下次打 tag 时生效。
-> 首次跑 R8 时优先确认三件事：
-> 1. `verifyXposedMetadata` 通过（三件套还在）
-> 2. 两个包签名指纹一致
-> 3. 装上 R8 版后设 `adb logcat | grep FluidRedirect`，能看到 `loaded in com.oplus.metis` ——
->    看得到就说明入口类没被 R8 删掉
+### 四、实测结果（真机 PLK110）
+
+| 项 | 普通版 | R8 版 |
+|---|---|---|
+| 体积 | 59.6 MB | **2.2 MB（缩小 96.3%）** |
+| 覆盖安装 | ✅ | ✅ 直接 `adb install -r`，无需卸载 |
+| 签名指纹 | `9FFD76D0…` | `9FFD76D0…`（一致） |
+| 设置页渲染 | ✅ | ✅ 标题/卡片/开关/图标/浏览器列表齐全 |
+| 模块加载 | ✅ | ✅ `loaded in com.oplus.metis:text_intent` |
+| 8 个 hook | ✅ | ✅ 全部 `Hook installed` |
+| 卡片文案 `fields=4` | ✅ | ✅ |
+| 点击落 `BrowserActivity` | ✅ | ✅ `result code=0` + `BAL_ALLOW_SAW_PERMISSION` |
+
+APK 侧核对（`classes.dex` 字符串池）：
+
+- `com/mo/fkLTY/hook/MainHook` 与三个新 hooker **均按原名存在**（keep 规则生效）
+- 所有以点号书写的 metis 反射目标都在：`com.oplus.textintent.pantanal.Seedling`、
+  `…distribution.bean.TextIntent`、`…distribution.ui.SingleAppInstallPanel`、
+  `…common.utils.ZoomOpenHandler`、`android.app.ActivityThread`、`android.app.ContextImpl`
+- `META-INF/xposed/` 三件套完整（`verifyXposedMetadata` 在 CI 上对两个包都做了断言）
+- `androidx/compose/material3` 查不到属于正常现象：R8 从 AGP 9.1 起默认重新打包类到顶层包，
+  内部引用会自动重定向，运行时不受影响（设置页渲染正常即为证）
+
+证据：`verify/evidence-r8-1216.log`、`verify/r8-settings.png`（设置页截图）、
+`verify/log-r8-1216.txt`（完整日志）。
+
+> R8 版体积缩到 2.2 MB 属于激进缩减，目前实测功能齐全。若日后发现设置页某处文案或图标缺失，
+> 通常是被资源缩减裁掉，先在 `rules.keep` 加对应 keep，或改用普通版对照确认。
 
 ## 1.2.15（按钮再压到两个字：打开）
 
