@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mo.fkLTY.R
+import com.mo.fkLTY.engine.CardOverrides
 import com.mo.fkLTY.engine.RedirectPrefs
 import com.mo.fkLTY.engine.CardText
 import com.mo.fkLTY.engine.PackageSwap
@@ -48,6 +49,10 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         val rules: Map<String, Boolean> = emptyMap(),
         val packageSwaps: List<PackageSwap> = emptyList(),
         val cardText: CardText = CardText(),
+        /** 每条替换规则自己的文案；没有条目 = 回落 [cardText] */
+        val cardOverrides: Map<String, CardText> = emptyMap(),
+        /** 浏览器卡片的专用文案（默认全空 = 什么都不改） */
+        val browserCardText: CardText = CardOverrides.EMPTY,
         val message: UiMessage? = null,
     )
 
@@ -74,6 +79,9 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
                         packageSwaps = PackageSwap.decodeAll(prefs?.getString(RedirectPrefs.KEY_PACKAGE_SWAPS, null)),
                         // 未绑定时保留当前值，避免界面被清空
                         cardText = prefs?.let { RedirectPrefs.cardText(it) } ?: current.cardText,
+                        cardOverrides = prefs?.let { RedirectPrefs.overrides(it) } ?: current.cardOverrides,
+                        browserCardText = prefs?.let { RedirectPrefs.browserCardText(it) }
+                            ?: current.browserCardText,
                     )
                 }
                 validateTarget()
@@ -147,6 +155,26 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 某一条替换规则的文案；传给全空的 text = 删除这条覆盖，回落全局默认 */
+    fun saveCardOverride(from: String, text: CardText) {
+        if (PrefsBridge.saveCardOverride(from, text)) {
+            _ui.update {
+                val next = if (text.isEmpty()) it.cardOverrides - from else it.cardOverrides + (from to text)
+                it.copy(cardOverrides = next, message = UiMessage(R.string.card_text_saved))
+            }
+        } else {
+            _ui.update { it.copy(message = UiMessage(R.string.save_failed)) }
+        }
+    }
+
+    fun saveBrowserCardText(text: CardText) {
+        if (PrefsBridge.saveBrowserCardText(text)) {
+            _ui.update { it.copy(browserCardText = text, message = UiMessage(R.string.card_text_saved)) }
+        } else {
+            _ui.update { it.copy(message = UiMessage(R.string.save_failed)) }
+        }
+    }
+
     fun requestScope() {
         PrefsBridge.requestScope { approved, message ->
             viewModelScope.launch {
@@ -190,6 +218,9 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         // 卡片改字：默认开（改字是为了让卡片和实际行为一致）
         RedirectPrefs.KEY_REWRITE_CARD_LABEL to
             (prefs?.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true) ?: true),
+        // 浏览器卡片改字：默认关（网页卡数量多，判据错一次就改到不该改的卡上）
+        RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED to
+            (prefs?.getBoolean(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, false) ?: false),
     )
 
     /** 可启动应用列表，用于规则编辑器选目标；无桌面入口的应用仍可手动填写包名。 */

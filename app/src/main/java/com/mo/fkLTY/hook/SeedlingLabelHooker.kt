@@ -3,6 +3,7 @@ package com.mo.fkLTY.hook
 import android.content.Context
 import com.mo.fkLTY.engine.BrowserAvailability
 import com.mo.fkLTY.engine.PackageSwapEngine
+import com.mo.fkLTY.engine.Policy
 import com.mo.fkLTY.engine.RedirectPrefs
 import io.github.libxposed.api.XposedInterface
 
@@ -62,9 +63,12 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         if (seedling == null) return
         val prefs = HookLog.prefs() ?: return
         // 开关：「应用替换」页里的「改卡片文字」，默认开
-        if (!prefs.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true)) return
+        val rewriteEnabled = prefs.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true)
         val swaps = PackageSwapEngine.load(prefs).filter { it.enabled && it.from != it.to }
-        if (swaps.isEmpty()) return
+        // 浏览器卡片改字：独立开关，默认关（网页卡数量多，判据错一次就改到不该改的卡）
+        val browserTextEnabled = prefs.getBoolean(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, false)
+        if (!rewriteEnabled && !browserTextEnabled) return
+        if (swaps.isEmpty() && !browserTextEnabled) return
 
         val context = readField(builder, "context") as? Context ?: return
 
@@ -80,8 +84,34 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
 
         // 只碰"引导安装"这类卡片,普通卡片一个字都不动
         val looksInstall = listOfNotNull(button, left, right, title).any { it.contains("安装") }
-        if (!looksInstall) return
+        if (looksInstall && rewriteEnabled && swaps.isNotEmpty()) {
+            if (rewriteInstallCard(context, prefs, cardInfo, ciCls, data, swaps, button, left, right, title)) return
+        }
 
+        // 不是安装卡（或安装卡没匹配到）时，再看是不是网页卡。
+        // 安装卡一律不交给浏览器分支：它身上可能带商店链接，被网页文案盖掉会自相矛盾。
+        if (browserTextEnabled && !looksInstall) {
+            rewriteBrowserCard(context, prefs, cardInfo, ciCls)
+        }
+    }
+
+    /**
+     * 「引导安装」卡：按命中的那一条替换规则取文案（每条可单独设，未设的回落全局默认）。
+     *
+     * @return true 表示已处理（无论是否改成功），调用方不必再走浏览器分支
+     */
+    private fun rewriteInstallCard(
+        context: Context,
+        prefs: android.content.SharedPreferences,
+        cardInfo: Any,
+        ciCls: Class<*>,
+        data: Any?,
+        swaps: List<com.mo.fkLTY.engine.PackageSwap>,
+        button: String?,
+        left: String?,
+        right: String?,
+        title: String?,
+    ): Boolean {
         val blobs = listOfNotNull(
             title,
             str(ciCls, cardInfo, "getCardSubTitle"),
@@ -100,9 +130,9 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
             if (!BrowserAvailability.isAvailable(context, swap.to)) continue
 
             val label = appLabel(context, swap.to) ?: swap.to
-            // 文案全部来自用户配置（应用替换页 → 卡片文字），{app} 已替换成目标应用名。
+            // 1.2.18：先查这条规则自己的文案，没有才回落全局默认；{app} 已替换成目标应用名。
             // 任一字段留空 = 该项不动，保留 metis 原文案。
-            val text = RedirectPrefs.cardText(prefs).resolve(label)
+            val text = RedirectPrefs.cardText(prefs, swap.from).resolve(label)
             val newButton = text.button
             val newTitle = text.title
             val newSubTitle = text.subtitle
@@ -145,12 +175,64 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
                     "按钮「$button」->「$newButton」, 标题「$title」->「$newTitle」, " +
                     "副标题「$subTitle」->「$newSubTitle」, 胶囊「$capsTitle」)",
             )
-            return
+            return true
         }
 
         HookLog.card(
             "seedling[build]: 是安装卡但没匹配到源包名,未改; " +
                 "title=$title, button=$button, blobs=${blobs.take(5)}",
+        )
+        return true
+    }
+
+    /**
+     * 浏览器（网页 / 搜索）卡片的文案。
+     *
+     * 判据：能从卡片字段里解析出 http(s) 地址，或 `textType == 29`（文字搜索卡）。
+     * 这是**用户主动开启**的功能，默认关闭——网页卡数量远多于安装卡，
+     * 判据宽松一点就会改到不该改的卡上，所以宁可少改。
+     *
+     * 与安装卡不同：这里不要求原文案含"安装"，因为网页卡本来就没有那句话；
+     * 但仍然遵守"字段留空 = 该项不改"。
+     */
+    private fun rewriteBrowserCard(
+        context: Context,
+        prefs: android.content.SharedPreferences,
+        cardInfo: Any,
+        ciCls: Class<*>,
+    ) {
+        val text = RedirectPrefs.browserCardText(prefs)
+        if (text.isEmpty()) return
+
+        val url = listOfNotNull(
+            str(ciCls, cardInfo, "getEventUri"),
+            str(ciCls, cardInfo, "getEventData"),
+        ).firstNotNullOfOrNull { Policy.extractHttpUrl(it) }
+        val textType = int(ciCls, cardInfo, "getTextType")
+        if (url == null && textType != 29) return
+
+        val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() }
+        val browserLabel = prefs.getString(RedirectPrefs.KEY_TARGET, null)
+            ?.let { appLabel(context, it) }
+            ?: ""
+        val resolved = text.resolve(appLabel = browserLabel, host = host)
+
+        var changed = 0
+        if (resolved.button.isNotBlank()) {
+            if (set(ciCls, cardInfo, "setButtonText", resolved.button)) changed++
+            if (set(ciCls, cardInfo, "setLeftButtonText", resolved.button)) changed++
+            if (set(ciCls, cardInfo, "setRightButtonText", resolved.button)) changed++
+        }
+        if (resolved.title.isNotBlank() && set(ciCls, cardInfo, "setCardTitle", resolved.title)) changed++
+        if (resolved.subtitle.isNotBlank() && set(ciCls, cardInfo, "setCardSubTitle", resolved.subtitle)) changed++
+        if (resolved.caps.isNotBlank()) {
+            if (set(ciCls, cardInfo, "setCapsTitle", resolved.caps)) changed++
+            if (set(ciCls, cardInfo, "setCapsDirectText", resolved.caps)) changed++
+        }
+
+        HookLog.card(
+            "seedling[build]: 网页卡改文案 fields=$changed (url=${url ?: "textType=29"}, host=$host, " +
+                "标题「${str(ciCls, cardInfo, "getCardTitle")}」->「${resolved.title}」)",
         )
     }
 
@@ -164,6 +246,12 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
 
     private fun str(cls: Class<*>, target: Any, getter: String): String? = try {
         cls.getMethod(getter).invoke(target) as? String
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun int(cls: Class<*>, target: Any, getter: String): Int? = try {
+        (cls.getMethod(getter).invoke(target) as? Number)?.toInt()
     } catch (_: Throwable) {
         null
     }

@@ -53,10 +53,24 @@ object RedirectPrefs {
     /** 占位符:运行时替换为目标应用的显示名 */
     const val PLACEHOLDER_APP = "{app}"
 
+    /** 占位符:运行时替换成网页域名(仅浏览器卡片有意义) */
+    const val PLACEHOLDER_HOST = "{host}"
+
     const val DEFAULT_CARD_TITLE = "打开${PLACEHOLDER_APP}"
     const val DEFAULT_CARD_SUBTITLE = "点击打开${PLACEHOLDER_APP}"
     const val DEFAULT_CARD_BUTTON = "打开"
     const val DEFAULT_CARD_CAPS = "打开${PLACEHOLDER_APP}"
+
+    // ---- 分条覆盖与浏览器卡片(1.2.18) ----
+
+    /** 每条替换规则自己的文案(JSON 数组,key = from 包名);未设置的回落上面四个全局键 */
+    const val KEY_CARD_OVERRIDES = "card_overrides_v1"
+
+    /** 浏览器卡片的专用文案(JSON 对象);与替换链路的文案完全独立 */
+    const val KEY_BROWSER_CARD_TEXT = "browser_card_text_v1"
+
+    /** 浏览器卡片改字的开关;**默认关**——网页卡数量多,判据错一次就改到不该改的卡 */
+    const val KEY_BROWSER_CARD_TEXT_ENABLED = "browser_card_text_enabled"
 
     /**
      * 读取自定义卡片文字。留空的字段保持空串——钩子侧据此判断"这一项不改",
@@ -68,6 +82,34 @@ object RedirectPrefs {
         button = prefs.getString(KEY_CARD_TEXT_BUTTON, null) ?: DEFAULT_CARD_BUTTON,
         caps = prefs.getString(KEY_CARD_TEXT_CAPS, null) ?: DEFAULT_CARD_CAPS,
     )
+
+    /**
+     * 某条替换规则实际使用的文案:先查它自己的覆盖,没有就回落全局默认。
+     *
+     * 这是 1.2.18 的核心——多条规则不再共用一份文案。
+     */
+    fun cardText(prefs: SharedPreferences, from: String): CardText =
+        overrides(prefs)[from] ?: cardText(prefs)
+
+    /** 浏览器卡片文案(独立一份,不看替换表) */
+    fun browserCardText(prefs: SharedPreferences): CardText =
+        CardOverrides.decodeOne(prefs.getString(KEY_BROWSER_CARD_TEXT, null))
+
+    /** 分条覆盖表;`Seedling$Builder.build()` 每次卡片刷新都会问一次,按 JSON 串缓存 */
+    fun overrides(prefs: SharedPreferences): Map<String, CardText> {
+        val json = prefs.getString(KEY_CARD_OVERRIDES, null)
+        if (json != cachedOverrideJson) {
+            cachedOverrideJson = json
+            cachedOverrides = CardOverrides.decodeAll(json)
+        }
+        return cachedOverrides
+    }
+
+    @Volatile
+    private var cachedOverrideJson: String? = null
+
+    @Volatile
+    private var cachedOverrides: Map<String, CardText> = emptyMap()
 
     /** 规则开关集;设置页与 hook 端共用同一组键与默认值 */
     fun toggles(prefs: SharedPreferences): RuleToggles = RuleToggles(
@@ -98,11 +140,25 @@ data class CardText(
     val button: String = RedirectPrefs.DEFAULT_CARD_BUTTON,
     val caps: String = RedirectPrefs.DEFAULT_CARD_CAPS,
 ) {
-    /** 把 `{app}` 换成实际应用名 */
-    fun resolve(appLabel: String): CardText = CardText(
-        title = title.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
-        subtitle = subtitle.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
-        button = button.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
-        caps = caps.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel),
+    /**
+     * 把占位符换成实际值。
+     *
+     * @param appLabel 目标应用的显示名（`{app}`）
+     * @param host     网页域名（`{host}`，仅浏览器卡片用）。为 null 时占位符替换成空串，
+     *                 不把 `{host}` 原样漏到卡片上。
+     */
+    fun resolve(appLabel: String, host: String? = null): CardText = CardText(
+        title = fill(title, appLabel, host),
+        subtitle = fill(subtitle, appLabel, host),
+        button = fill(button, appLabel, host),
+        caps = fill(caps, appLabel, host),
     )
+
+    private fun fill(raw: String, appLabel: String, host: String?): String =
+        raw.replace(RedirectPrefs.PLACEHOLDER_APP, appLabel)
+            .replace(RedirectPrefs.PLACEHOLDER_HOST, host ?: "")
+
+    /** 四个字段全空 = 这条什么也不改 */
+    fun isEmpty(): Boolean =
+        title.isBlank() && subtitle.isBlank() && button.isBlank() && caps.isBlank()
 }

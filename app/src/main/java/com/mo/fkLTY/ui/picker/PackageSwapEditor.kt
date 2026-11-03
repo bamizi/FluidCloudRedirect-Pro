@@ -3,6 +3,7 @@ package com.mo.fkLTY.ui.picker
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,7 +43,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.mo.fkLTY.engine.CardOverrides
+import com.mo.fkLTY.engine.CardText
 import com.mo.fkLTY.engine.PackageSwap
+import com.mo.fkLTY.engine.RedirectPrefs
 import com.mo.fkLTY.ui.theme.AppMotion
 import com.mo.fkLTY.ui.theme.AppRadius
 import com.mo.fkLTY.ui.theme.AppSpace
@@ -64,10 +68,16 @@ import com.mo.fkLTY.ui.theme.rememberReduceMotion
 fun PackageSwapEditor(
     swaps: List<PackageSwap>,
     apps: List<PickerViewModel.BrowserEntry>,
+    /** 每条规则自己的文案；没有条目 = 用全局默认 */
+    overrides: Map<String, CardText>,
+    /** 全局默认文案，对话框里作为"留空时用什么"的提示 */
+    globalText: CardText,
+    onSaveOverride: (String, CardText) -> Unit,
     onSave: (List<PackageSwap>) -> Unit,
 ) {
     var showEditor by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<PackageSwap?>(null) }
+    var pendingText by remember { mutableStateOf<PackageSwap?>(null) }
     val reduceMotion = rememberReduceMotion()
 
     // 增删替换时卡片高度平滑收放，而不是"跳"一下
@@ -92,9 +102,11 @@ fun PackageSwapEditor(
                 title = "${labelOf(apps, swap.from)} → ${labelOf(apps, swap.to)}",
                 subtitle = "${swap.from} → ${swap.to}",
                 checked = swap.enabled,
+                customized = overrides.containsKey(swap.from),
                 onCheckedChange = { enabled ->
                     onSave(swaps.map { if (it.from == swap.from) it.copy(enabled = enabled) else it })
                 },
+                onEditText = { pendingText = swap },
                 onDelete = { pendingDelete = swap },
                 // 每条后面都有分隔线：最后一条下面还接着「＋ 添加」，不画线会连成一片
                 showDivider = true,
@@ -145,6 +157,23 @@ fun PackageSwapEditor(
             },
         )
     }
+
+    pendingText?.let { target ->
+        CardOverrideDialog(
+            from = target.from,
+            to = target.to,
+            // 没单独设过就从"什么都没填"开始——预填全局值会让用户一点保存就把默认固化成本条
+            initial = overrides[target.from] ?: CardOverrides.EMPTY,
+            global = globalText,
+            label = labelOf(apps, target.to),
+            icon = apps.firstOrNull { it.pkg == target.to }?.icon,
+            onDismiss = { pendingText = null },
+            onSave = {
+                onSaveOverride(target.from, it)
+                pendingText = null
+            },
+        )
+    }
 }
 
 private fun labelOf(apps: List<PickerViewModel.BrowserEntry>, pkg: String): String =
@@ -157,7 +186,10 @@ private fun SwapRow(
     title: String,
     subtitle: String,
     checked: Boolean,
+    /** 这条规则是否已单独设过文案（决定「文案」按钮是否高亮） */
+    customized: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    onEditText: () -> Unit,
     onDelete: () -> Unit,
     showDivider: Boolean,
 ) {
@@ -199,6 +231,27 @@ private fun SwapRow(
                 )
             }
             Spacer(Modifier.width(AppSpace.s))
+            // 每条规则自己的文案入口：设过的高亮，一眼看出哪几条是定制过的
+            Box(
+                modifier = Modifier
+                    .heightIn(min = AppSpace.minTouchTarget)
+                    .clip(RoundedCornerShape(AppRadius.pill))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onEditText,
+                    )
+                    .padding(horizontal = AppSpace.m),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (customized) "文案·已设" else "文案",
+                    style = AppType.chip,
+                    color = if (customized) c.primary else c.textSecondary,
+                    maxLines = 1,
+                )
+            }
             AppSwitch(checked = checked, onCheckedChange = onCheckedChange)
         }
         if (showDivider) AppDivider()
@@ -539,3 +592,121 @@ private fun AppAlertDialog(
         },
     )
 }
+
+/* ───────────────────────── 单条规则的文案 ───────────────────────── */
+
+/**
+ * 某一条替换规则的卡片文字。
+ *
+ * 与全局「默认文案」的关系：这里**留空的项用默认文案**，填了才覆盖。
+ * 所以一开始不预填全局值（预填＝用户一点保存就把默认固化成这条），
+ * 每栏右侧的灰色提示会直接告诉他"留空会用哪个值"。
+ */
+@Composable
+private fun CardOverrideDialog(
+    from: String,
+    to: String,
+    initial: CardText,
+    global: CardText,
+    label: String,
+    icon: Drawable?,
+    onDismiss: () -> Unit,
+    onSave: (CardText) -> Unit,
+) {
+    val c = AppTheme.colors
+    var title by remember { mutableStateOf(initial.title) }
+    var subtitle by remember { mutableStateOf(initial.subtitle) }
+    var button by remember { mutableStateOf(initial.button) }
+    var caps by remember { mutableStateOf(initial.caps) }
+
+    val draft = CardText(title = title, subtitle = subtitle, button = button, caps = caps)
+    // 留空回落默认，用于预览与右侧提示
+    val effective = draft.orElse(global).resolve(label)
+    val base = global.resolve(label)
+
+    AppDialogShell(
+        title = "这条规则的卡片文字",
+        onDismiss = onDismiss,
+        content = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(AppSpace.l)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(AppSpace.m),
+            ) {
+                Text(
+                    text = "只对「$from → $to」这一条生效。留空表示沿用上面的默认文案，不会清空文字。",
+                    style = AppType.rowSub,
+                    color = c.textSecondary,
+                )
+
+                AppTextField(
+                    label = "标题",
+                    value = title,
+                    placeholder = base.title.ifBlank { RedirectPrefs.DEFAULT_CARD_TITLE },
+                    hint = if (title.isBlank()) "默认：${base.title}" else "→ ${effective.title}",
+                    onValueChange = { title = it },
+                )
+                AppTextField(
+                    label = "副标题",
+                    value = subtitle,
+                    placeholder = base.subtitle.ifBlank { RedirectPrefs.DEFAULT_CARD_SUBTITLE },
+                    hint = if (subtitle.isBlank()) "默认：${base.subtitle}" else "→ ${effective.subtitle}",
+                    onValueChange = { subtitle = it },
+                )
+                AppTextField(
+                    label = "按钮",
+                    value = button,
+                    placeholder = base.button.ifBlank { RedirectPrefs.DEFAULT_CARD_BUTTON },
+                    hint = if (button.isBlank()) "默认：${base.button}" else "→ ${effective.button}",
+                    onValueChange = { button = it },
+                )
+                AppTextField(
+                    label = "胶囊（状态栏气泡）",
+                    value = caps,
+                    placeholder = base.caps.ifBlank { RedirectPrefs.DEFAULT_CARD_CAPS },
+                    hint = if (caps.isBlank()) "默认：${base.caps}" else "→ ${effective.caps}",
+                    onValueChange = { caps = it },
+                )
+
+                Text(text = "预览", style = AppType.sectionTitle, color = c.textSecondary)
+                CardPreview(text = effective, icon = icon)
+            }
+        },
+        actions = {
+            DialogAction(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(AppSpace.minTouchTarget)
+                    .background(c.outline),
+            )
+            // 清空覆盖 = 这条重新跟默认文案一致
+            DialogAction(
+                text = "用默认",
+                onClick = { onSave(CardOverrides.EMPTY) },
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(AppSpace.minTouchTarget)
+                    .background(c.outline),
+            )
+            DialogAction(
+                text = "保存",
+                onClick = { onSave(draft) },
+                modifier = Modifier.weight(1f),
+            )
+        },
+    )
+}
+
+/** 留空的项取 [fallback] 的对应项 */
+private fun CardText.orElse(fallback: CardText): CardText = CardText(
+    title = title.ifBlank { fallback.title },
+    subtitle = subtitle.ifBlank { fallback.subtitle },
+    button = button.ifBlank { fallback.button },
+    caps = caps.ifBlank { fallback.caps },
+)

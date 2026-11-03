@@ -1,6 +1,7 @@
 package com.mo.fkLTY.service
 
 import android.content.SharedPreferences
+import com.mo.fkLTY.engine.CardOverrides
 import com.mo.fkLTY.engine.RedirectPrefs
 import com.mo.fkLTY.engine.PackageSwap
 import io.github.libxposed.service.XposedService
@@ -123,4 +124,30 @@ object PrefsBridge {
             .putString(RedirectPrefs.KEY_CARD_TEXT_CAPS, text.caps)
             .commit()
     }
+
+    /**
+     * 保存**某一条替换规则**的文案覆盖。
+     *
+     * 整张表重新写一遍（表很小，条目数通常个位数），避免做增量合并时
+     * 与 hook 端的缓存读到中间态。传全空的 text 等于删除这条覆盖。
+     */
+    fun saveCardOverride(from: String, text: com.mo.fkLTY.engine.CardText): Boolean {
+        val prefs = _state.value.prefs ?: return false
+        val current = CardOverrides.decodeAll(prefs.getString(RedirectPrefs.KEY_CARD_OVERRIDES, null))
+        val next = if (text.isEmpty()) current - from else current + (from to text)
+        return prefs.edit()
+            .putString(RedirectPrefs.KEY_CARD_OVERRIDES, CardOverrides.encodeAll(next))
+            .commit()
+    }
+
+    /** 保存浏览器卡片文案（与替换链路完全独立） */
+    fun saveBrowserCardText(text: com.mo.fkLTY.engine.CardText): Boolean {
+        val prefs = _state.value.prefs ?: return false
+        return prefs.edit()
+            .putString(RedirectPrefs.KEY_BROWSER_CARD_TEXT, CardOverrides.encodeOne(text))
+            .commit()
+    }
+
+    fun saveBrowserCardTextEnabled(value: Boolean): Boolean =
+        saveRule(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, value)
 }

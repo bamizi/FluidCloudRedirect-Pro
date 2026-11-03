@@ -1,5 +1,60 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.18（分条文案 + 浏览器卡片文案）
+
+两条需求：**每条替换规则写自己的文案**、**浏览器卡片也能改字**。图标自定义待验证，见文末。
+
+### 一、每条替换规则各自的文案
+
+之前只有一份全局文案，多条替换规则共用——给「夸克口令卡」写的话，另一条规则也照用。
+
+现在是两层：
+
+| 层 | 存在哪 | 谁在用 |
+|---|---|---|
+| 默认文案 | `card_text_*` 四个键（沿用原结构） | 没有单独设过文字的规则 |
+| 单条覆盖 | `card_overrides_v1`（JSON，按 `from` 包名索引） | 该条替换规则 |
+
+- 入口：替换列表每一行右侧的「文案」按钮；设过的显示为「文案·已设」
+- 对话框里**留空的项用默认文案**，填了才覆盖——所以打开时不会预填默认值
+- 每栏右侧仍显示最终效果（`→ 打开夸克网盘`）或「默认：…」
+- 「用默认」按钮 = 删掉这条覆盖，重新跟随默认
+- 老配置无需迁移：全局四个键原样保留
+
+### 二、浏览器卡片文案（默认关闭）
+
+网页卡和「应用替换」卡是同一个渲染层（`Seedling$Builder.build()`），钩子点现成。
+
+- 独立开关 + 独立一份文案，与替换链路互不影响
+- 支持 `{host}`（网页域名）与 `{app}`（目标浏览器名）
+- **默认全空 = 什么都不改**，用户开开关不会瞬间把所有网页卡改掉
+- 判据：卡片能解析出 http(s) 地址，或 `textType == 29`（文字搜索卡）；
+  installation 卡一律不交给这条分支
+- 默认关闭：网页卡数量远多于安装卡，判据错一次就会改到不该改的卡上
+
+### 三、卡片图标：能做与不能做（待真机验证）
+
+反汇编 metis 的 `classes7.dex` 确认 `CardInfo` 的图标字段全部是 **String**：
+
+| 字段 | setter |
+|---|---|
+| `cardIcon` / `leadingIcon` / `capsIcon` / `cardSubTitleIcon` / `buttonIcon` | 均有 `setXxx(String)` |
+| `cardIconShape` / `leadingIconShape` / `capsIconShape` | 形状 |
+| `showCardIcon` / `showCardSubTitleIcon` / `capsDirectShowIcon` | 显示开关 |
+
+取值形式是 **metis 自己的资源名**：`build()` 在空值时补 `@drawable/ic_def_card`、
+`@drawable/ic_def_caps`；另有 `RESOURCE_PATH_HOST = "@drawable/%s"`、
+`RESOURCE_PATH_LOCAL = "assets/images/%s.png"`、`useLocalResource`。
+
+结论：
+
+- ✅ **确定能做**：隐藏图标（`setShowCardIcon(false)`）、改图标形状、从 metis 内置图标池里指定
+- ⚠️ **不能直接做**：让用户上传任意图片 —— 资源名只在 metis 的资源表里解析
+- ❓ **待验证**：SystemUI 是否接受 `file://` / `content://`。若是，则「用目标 App 的图标」
+  可实现（模块侧用 PackageManager 取图标存 PNG，hook 写路径）。需真机拉 SystemUI APK 反编译确认
+
+> 本节只记录事实与结论，功能尚未实现——等真机验证后再决定走哪条路。
+
 ## 1.2.17（界面重做 + 卡片文字可自定义）
 
 功能性改动只有一条：**卡片上的文字现在用户自己写**。其余是整屏界面的重做。

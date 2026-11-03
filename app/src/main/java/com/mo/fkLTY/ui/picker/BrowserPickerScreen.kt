@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mo.fkLTY.R
+import com.mo.fkLTY.engine.CardOverrides
 import com.mo.fkLTY.engine.CardText
 import com.mo.fkLTY.engine.PackageSwap
 import com.mo.fkLTY.engine.RedirectPrefs
@@ -185,11 +186,19 @@ fun BrowserPickerScreen(
                             swaps = ui.packageSwaps,
                             apps = ui.installedApps,
                             cardText = ui.cardText,
+                            cardOverrides = ui.cardOverrides,
+                            browserCardText = ui.browserCardText,
                             rewriteEnabled = ui.rules[RedirectPrefs.KEY_REWRITE_CARD_LABEL] == true,
+                            browserTextEnabled = ui.rules[RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED] == true,
                             onToggleRewrite = {
                                 viewModel.toggleRule(RedirectPrefs.KEY_REWRITE_CARD_LABEL, it)
                             },
+                            onToggleBrowserText = {
+                                viewModel.toggleRule(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, it)
+                            },
                             onSaveCardText = viewModel::saveCardText,
+                            onSaveOverride = viewModel::saveCardOverride,
+                            onSaveBrowserCardText = viewModel::saveBrowserCardText,
                             onSave = viewModel::savePackageSwaps,
                         )
 
@@ -386,14 +395,27 @@ private fun SwapTab(
     swaps: List<PackageSwap>,
     apps: List<PickerViewModel.BrowserEntry>,
     cardText: CardText,
+    cardOverrides: Map<String, CardText>,
+    browserCardText: CardText,
     rewriteEnabled: Boolean,
+    browserTextEnabled: Boolean,
     onToggleRewrite: (Boolean) -> Unit,
+    onToggleBrowserText: (Boolean) -> Unit,
     onSaveCardText: (CardText) -> Unit,
+    onSaveOverride: (String, CardText) -> Unit,
+    onSaveBrowserCardText: (CardText) -> Unit,
     onSave: (List<PackageSwap>) -> Unit,
 ) {
     val c = AppTheme.colors
 
-    PackageSwapEditor(swaps = swaps, apps = apps, onSave = onSave)
+    PackageSwapEditor(
+        swaps = swaps,
+        apps = apps,
+        overrides = cardOverrides,
+        globalText = cardText,
+        onSaveOverride = onSaveOverride,
+        onSave = onSave,
+    )
 
     Text(
         text = stringResource(R.string.footer_swap),
@@ -425,6 +447,13 @@ private fun SwapTab(
         // 预览用第一条启用的替换作为样本：图标与名字都取真机上的实际值
         val preview = swaps.firstOrNull { it.enabled }?.to
             ?.let { pkg -> apps.firstOrNull { it.pkg == pkg } }
+        Text(
+            text = "下面是默认文案：没有单独设过文字的替换规则用它。" +
+                "想给某一条写不一样的话，点上面对应行的「文案」。",
+            style = AppType.rowSub,
+            color = c.textSecondary,
+            modifier = Modifier.padding(start = AppSpace.xs, top = AppSpace.s),
+        )
         CardTextEditor(
             current = cardText,
             previewLabel = preview?.label ?: "目标应用",
@@ -439,6 +468,38 @@ private fun SwapTab(
             modifier = Modifier.padding(start = AppSpace.xs),
         )
     }
+
+    // ── 浏览器卡片（默认关） ──
+    AppSectionTitle("浏览器卡片")
+    AppCard(padded = false) {
+        AppRuleRow(
+            icon = Icons.Outlined.Public,
+            title = "改浏览器卡片的文字",
+            subtitle = "默认关闭。开启后，网页 / 搜索类卡片也按下面的文字显示",
+            checked = browserTextEnabled,
+            onCheckedChange = onToggleBrowserText,
+        )
+    }
+
+    if (browserTextEnabled) {
+        val targetBrowser = apps.firstOrNull {
+            it.pkg == (swaps.firstOrNull()?.to ?: "")
+        }
+        Text(
+            text = "这里留空就是不改（不会把网页标题清掉）。可用 {host} 代表网页域名。" +
+                "网页卡很多，判错一次就会改到不该改的卡上，所以默认关。",
+            style = AppType.rowSub,
+            color = c.textSecondary,
+            modifier = Modifier.padding(start = AppSpace.xs, top = AppSpace.s),
+        )
+        CardTextEditor(
+            current = browserCardText,
+            previewLabel = "浏览器",
+            previewIcon = targetBrowser?.icon,
+            onSave = onSaveBrowserCardText,
+            forBrowserCard = true,
+        )
+    }
 }
 
 /**
@@ -446,6 +507,10 @@ private fun SwapTab(
  *
  * 编辑态是本地草稿，点「保存」才写入——避免每敲一个字就 commit 一次远程偏好。
  * `{app}` 是占位符，运行时替换成目标应用名，所以换目标 App 不用改文案。
+ *
+ * @param forBrowserCard true = 浏览器卡片那一份。它与替换链路有两处不同：
+ *   默认是**全空**（不是模板文案），且额外支持 `{host}`；
+ *   空值语义也从"保持原文案"变成"不改"。
  */
 @Composable
 private fun CardTextEditor(
@@ -453,6 +518,7 @@ private fun CardTextEditor(
     previewLabel: String,
     previewIcon: Drawable?,
     onSave: (CardText) -> Unit,
+    forBrowserCard: Boolean = false,
 ) {
     val c = AppTheme.colors
     var title by remember(current) { mutableStateOf(current.title) }
@@ -462,12 +528,20 @@ private fun CardTextEditor(
 
     val draft = CardText(title = title, subtitle = subtitle, button = button, caps = caps)
     val dirty = draft != current
-    // 每栏右侧提示的最终效果；模板里的 {app} 在这里展开，一眼能看出真机长什么样
-    val resolved = draft.resolve(previewLabel)
+    // 每栏右侧提示的最终效果；模板里的占位符在这里展开，一眼能看出真机长什么样。
+    // 浏览器卡片的预览用一个示例域名，免得 {host} 原样挂在预览里。
+    val previewHost = if (forBrowserCard) "example.com" else null
+    val resolved = draft.resolve(previewLabel, previewHost)
+    val blankHint = if (forBrowserCard) "不改" else "保持原文案"
+    val intro = if (forBrowserCard) {
+        "用 {host} 代表网页域名、{app} 代表目标浏览器名；留空表示这一项不改。右侧灰色小字是最终显示效果。"
+    } else {
+        "用 {app} 代表目标应用名，换目标 App 时文案会自动跟着变；留空表示这一项不改。右侧灰色小字是最终显示效果。"
+    }
 
     AppCard {
         Text(
-            text = "用 {app} 代表目标应用名，换目标 App 时文案会自动跟着变；留空表示这一项不改。右侧灰色小字是最终显示效果。",
+            text = intro,
             style = AppType.rowSub,
             color = c.textSecondary,
         )
@@ -476,16 +550,16 @@ private fun CardTextEditor(
         AppTextField(
             label = "标题",
             value = title,
-            placeholder = RedirectPrefs.DEFAULT_CARD_TITLE,
-            hint = if (title.isBlank()) "保持原文案" else "→ ${resolved.title}",
+            placeholder = if (forBrowserCard) "用 {app} 打开 {host}" else RedirectPrefs.DEFAULT_CARD_TITLE,
+            hint = if (title.isBlank()) blankHint else "→ ${resolved.title}",
             onValueChange = { title = it },
         )
         Spacer(Modifier.height(AppSpace.m))
         AppTextField(
             label = "副标题",
             value = subtitle,
-            placeholder = RedirectPrefs.DEFAULT_CARD_SUBTITLE,
-            hint = if (subtitle.isBlank()) "保持原文案" else "→ ${resolved.subtitle}",
+            placeholder = if (forBrowserCard) "来自 {host}" else RedirectPrefs.DEFAULT_CARD_SUBTITLE,
+            hint = if (subtitle.isBlank()) blankHint else "→ ${resolved.subtitle}",
             onValueChange = { subtitle = it },
         )
         Spacer(Modifier.height(AppSpace.m))
@@ -493,7 +567,7 @@ private fun CardTextEditor(
             label = "按钮",
             value = button,
             placeholder = RedirectPrefs.DEFAULT_CARD_BUTTON,
-            hint = if (button.isBlank()) "保持原文案" else "→ ${resolved.button}",
+            hint = if (button.isBlank()) blankHint else "→ ${resolved.button}",
             onValueChange = { button = it },
         )
         Spacer(Modifier.height(AppSpace.m))
@@ -501,7 +575,7 @@ private fun CardTextEditor(
             label = "胶囊（状态栏气泡）",
             value = caps,
             placeholder = RedirectPrefs.DEFAULT_CARD_CAPS,
-            hint = if (caps.isBlank()) "保持原文案" else "→ ${resolved.caps}",
+            hint = if (caps.isBlank()) blankHint else "→ ${resolved.caps}",
             onValueChange = { caps = it },
         )
 
@@ -522,7 +596,8 @@ private fun CardTextEditor(
             )
             AppChip(
                 text = "恢复默认",
-                onClick = { onSave(CardText()) },
+                // 浏览器卡片的默认是"全空 = 什么都不改"，不是那套模板文案
+                onClick = { onSave(if (forBrowserCard) CardOverrides.EMPTY else CardText()) },
             )
         }
     }
@@ -535,7 +610,7 @@ private fun CardTextEditor(
  * 这一页是设置界面，突兀的黑块反而割裂。要看的是"文字与位置"，不是色值。
  */
 @Composable
-private fun CardPreview(text: CardText, icon: Drawable?) {
+internal fun CardPreview(text: CardText, icon: Drawable?) {
     val c = AppTheme.colors
     val shape = RoundedCornerShape(22.dp)
     Row(
