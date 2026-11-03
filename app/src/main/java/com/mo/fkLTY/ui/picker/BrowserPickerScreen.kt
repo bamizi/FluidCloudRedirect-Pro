@@ -176,9 +176,16 @@ fun BrowserPickerScreen(
                     when (currentTab) {
                         0 -> BrowserTab(
                             ui = ui,
+                            browserTextEnabled =
+                                ui.rules[RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED] == true,
+                            browserCardText = ui.browserCardText,
                             onToggleRule = viewModel::toggleRule,
                             onSelect = viewModel::select,
                             onRequestScope = viewModel::requestScope,
+                            onToggleBrowserText = {
+                                viewModel.toggleRule(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, it)
+                            },
+                            onSaveBrowserCardText = viewModel::saveBrowserCardText,
                             onGotoSwap = { tab = 1 },
                             onGotoAbout = { tab = 2 },
                         )
@@ -188,19 +195,13 @@ fun BrowserPickerScreen(
                             apps = ui.installedApps,
                             cardText = ui.cardText,
                             cardOverrides = ui.cardOverrides,
-                            browserCardText = ui.browserCardText,
                             cardIconUri = ui.cardIconUri,
                             rewriteEnabled = ui.rules[RedirectPrefs.KEY_REWRITE_CARD_LABEL] == true,
-                            browserTextEnabled = ui.rules[RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED] == true,
                             onToggleRewrite = {
                                 viewModel.toggleRule(RedirectPrefs.KEY_REWRITE_CARD_LABEL, it)
                             },
-                            onToggleBrowserText = {
-                                viewModel.toggleRule(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, it)
-                            },
                             onSaveCardText = viewModel::saveCardText,
                             onSaveOverride = viewModel::saveCardOverride,
-                            onSaveBrowserCardText = viewModel::saveBrowserCardText,
                             onSaveCardIconUri = viewModel::saveCardIconUri,
                             onSave = viewModel::savePackageSwaps,
                         )
@@ -237,9 +238,13 @@ fun BrowserPickerScreen(
 @Composable
 private fun BrowserTab(
     ui: PickerViewModel.UiState,
+    browserTextEnabled: Boolean,
+    browserCardText: CardText,
     onToggleRule: (String, Boolean) -> Unit,
     onSelect: (String?) -> Unit,
     onRequestScope: () -> Unit,
+    onToggleBrowserText: (Boolean) -> Unit,
+    onSaveBrowserCardText: (CardText) -> Unit,
     onGotoSwap: () -> Unit,
     onGotoAbout: () -> Unit,
 ) {
@@ -333,6 +338,38 @@ private fun BrowserTab(
         color = c.textTertiary,
         modifier = Modifier.padding(start = AppSpace.xs, top = AppSpace.xs),
     )
+
+    // ── 浏览器卡片文字（默认关） ──
+    // 放在浏览器页而不是应用替换页：这段配置只对网页卡生效，和"口令卡 A→B"是两条链路，
+    // 挤在一起会让人以为它也管应用替换。
+    AppSectionTitle("浏览器卡片文字")
+    AppCard(padded = false) {
+        AppRuleRow(
+            icon = Icons.Outlined.Public,
+            title = "改浏览器卡片的文字",
+            subtitle = "默认关闭。开启后，网页 / 搜索类卡片也按下面的文字显示",
+            checked = browserTextEnabled,
+            onCheckedChange = onToggleBrowserText,
+        )
+    }
+
+    if (browserTextEnabled) {
+        val targetBrowser = ui.browsers.firstOrNull { it.pkg == ui.target }
+        Text(
+            text = "这里留空就是不改（不会把网页标题清掉）。可用 {host} 代表网页域名。" +
+                "网页卡很多，判错一次就会改到不该改的卡上，所以默认关。",
+            style = AppType.rowSub,
+            color = c.textSecondary,
+            modifier = Modifier.padding(start = AppSpace.xs, top = AppSpace.s),
+        )
+        CardTextEditor(
+            current = browserCardText,
+            previewLabel = targetBrowser?.label ?: "浏览器",
+            previewIcon = targetBrowser?.icon,
+            onSave = onSaveBrowserCardText,
+            forBrowserCard = true,
+        )
+    }
 }
 
 /** 主状态卡：渐变底 + 白字，是整页唯一的强调色区域。`actionText` 为 null 时不显示按钮 */
@@ -399,15 +436,11 @@ private fun SwapTab(
     apps: List<PickerViewModel.BrowserEntry>,
     cardText: CardText,
     cardOverrides: Map<String, CardText>,
-    browserCardText: CardText,
     cardIconUri: String,
     rewriteEnabled: Boolean,
-    browserTextEnabled: Boolean,
     onToggleRewrite: (Boolean) -> Unit,
-    onToggleBrowserText: (Boolean) -> Unit,
     onSaveCardText: (CardText) -> Unit,
     onSaveOverride: (String, CardText) -> Unit,
-    onSaveBrowserCardText: (CardText) -> Unit,
     onSaveCardIconUri: (String) -> Unit,
     onSave: (List<PackageSwap>) -> Unit,
 ) {
@@ -483,38 +516,6 @@ private fun SwapTab(
             ?.let { pkg -> apps.firstOrNull { it.pkg == pkg }?.label },
         onSave = onSaveCardIconUri,
     )
-
-    // ── 浏览器卡片（默认关） ──
-    AppSectionTitle("浏览器卡片")
-    AppCard(padded = false) {
-        AppRuleRow(
-            icon = Icons.Outlined.Public,
-            title = "改浏览器卡片的文字",
-            subtitle = "默认关闭。开启后，网页 / 搜索类卡片也按下面的文字显示",
-            checked = browserTextEnabled,
-            onCheckedChange = onToggleBrowserText,
-        )
-    }
-
-    if (browserTextEnabled) {
-        val targetBrowser = apps.firstOrNull {
-            it.pkg == (swaps.firstOrNull()?.to ?: "")
-        }
-        Text(
-            text = "这里留空就是不改（不会把网页标题清掉）。可用 {host} 代表网页域名。" +
-                "网页卡很多，判错一次就会改到不该改的卡上，所以默认关。",
-            style = AppType.rowSub,
-            color = c.textSecondary,
-            modifier = Modifier.padding(start = AppSpace.xs, top = AppSpace.s),
-        )
-        CardTextEditor(
-            current = browserCardText,
-            previewLabel = "浏览器",
-            previewIcon = targetBrowser?.icon,
-            onSave = onSaveBrowserCardText,
-            forBrowserCard = true,
-        )
-    }
 }
 
 /**

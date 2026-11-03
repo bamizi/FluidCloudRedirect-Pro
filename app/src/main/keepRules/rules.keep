@@ -17,6 +17,11 @@
 -keep class com.mo.fkLTY.hook.InstallPanelTextHooker { *; }
 -keep class com.mo.fkLTY.hook.StartActivityHooker { *; }
 
+# 1.2.19 起的卡片图标覆盖。逻辑上被 SeedlingLabelHooker 直接引用、不会被当死代码删,
+# 但它内部大量反射调用 metis 的 FileShareHelper;留一份不内联的版本,
+# 排障时看栈/看类还在不在会方便很多(1.2.19 那次查"图标没生效"就吃过这个亏)。
+-keep class com.mo.fkLTY.hook.CardIconOverride { *; }
+
 # XposedProvider 在 AndroidManifest 中声明,AGP 会自动保留,此处显式声明以防误删
 -keep class io.github.libxposed.service.XposedProvider { *; }
 

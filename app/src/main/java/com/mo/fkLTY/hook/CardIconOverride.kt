@@ -55,20 +55,19 @@ internal object CardIconOverride {
     fun apply(context: Context, cardInfo: Any, ciCls: Class<*>, spec: String, pkg: String): String? {
         val uri = resolveToUri(context, ciCls, spec, pkg) ?: return null
 
-        var changed = 0
-        // 卡片主图标 + 通知栏左侧小图 + 胶囊图标，三处一起设：
-        // 只改一处的话，不同卡片尺寸下会出现"大图变了小图没变"的割裂。
-        for (setter in listOf("setCardIcon", "setLeadingIcon", "setCapsIcon")) {
-            if (setField(ciCls, cardInfo, setter, uri)) changed++
-        }
+        /*
+         * 只改 cardIcon 这一个字段。
+         *
+         * 1.2.19 一开始把 leadingIcon / capsIcon 也一起写了，结果真机上卡片
+         * 直接点不动了——这三个字段在 metis 里的用途并不相同（cardIcon 是卡片主图，
+         * leadingIcon 是通知栏左侧小图，capsIcon 是胶囊图标），后两者在部分布局里
+         * 由 SystemUI 用另一套逻辑解析，塞一个 content:// 进去会让渲染阶段拿不到图，
+         * 整张卡片退化成不可点。教训：不确定用途的字段不要"顺手一起设"。
+         */
+        val changed = if (setField(ciCls, cardInfo, "setCardIcon", uri)) 1 else 0
         if (changed == 0) return null
 
-        // 图标被换掉后，metis 默认的图标形状/显示开关可能把成品裁得看不出原图。
-        // 这两个是确定存在且有 setter 的（classes7 的 CardInfo 字段表），失败也无妨。
-        setBool(ciCls, cardInfo, "setShowCardIcon", true)
-        setBool(ciCls, cardInfo, "setCapsDirectShowIcon", true)
-
-        return "fields=$changed uri=$uri"
+        return "uri=$uri"
     }
 
     /** 把用户填写的内容变成一个渲染层能读的 Uri 字符串 */
