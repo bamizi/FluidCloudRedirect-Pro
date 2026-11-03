@@ -35,8 +35,8 @@ android {
         applicationId = "com.mo.fkLTY.pro"
         minSdk = 29
         targetSdk = 37
-        versionCode = 42
-        versionName = "1.2.22"
+        versionCode = 43
+        versionName = "1.2.23"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

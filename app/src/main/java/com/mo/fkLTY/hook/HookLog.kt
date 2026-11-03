@@ -21,7 +21,7 @@ object HookLog {
 
     /** 卡片取证日志的每进程配额:排查期需要看到每次点击,又不能无限刷 */
     private val cardCount = java.util.concurrent.atomic.AtomicInteger(0)
-    private const val CARD_LOG_LIMIT = 40
+    private const val CARD_LOG_LIMIT = 150
 
     /** 框架实例化入口后立即绑定;每进程一次 */
     fun bind(m: XposedModule) {

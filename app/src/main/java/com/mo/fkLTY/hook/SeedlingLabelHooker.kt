@@ -49,10 +49,8 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         try {
             rewrite(chain.thisObject, seedling)
         } catch (t: Throwable) {
-            HookLog.once(
-                "err:seedling",
-                "SeedlingLabelHooker error: ${t.javaClass.simpleName}: ${t.message}",
-            )
+            // 别用 once：抛过一次之后就不再记录，会把后续的失败全藏起来
+            HookLog.card("SeedlingLabelHooker error: ${t.javaClass.simpleName}: ${t.message}")
         }
         return seedling
     }
@@ -60,8 +58,17 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
     private fun rewrite(builder: Any?, seedling: Any?) {
         // 进过一次就留痕:用来判断 build() 这条路径到底有没有被走到
         HookLog.once("seedling-entered", "seedling[build]: entered")
-        if (seedling == null) return
-        val prefs = HookLog.prefs() ?: return
+        // 以下每个出口都留痕。之前这些 return 全是静默的，导致只知道"进来了"
+        // 却不知道卡在哪一步——排查时最大的盲点。
+        if (seedling == null) {
+            HookLog.card("diag: seedling=null，跳过")
+            return
+        }
+        val prefs = HookLog.prefs()
+        if (prefs == null) {
+            HookLog.card("diag: 远程偏好不可用(prefs=null)，跳过")
+            return
+        }
         // 开关：「应用替换」页里的「改卡片文字」，默认开
         val rewriteEnabled = prefs.getBoolean(RedirectPrefs.KEY_REWRITE_CARD_LABEL, true)
         val swaps = PackageSwapEngine.load(prefs).filter { it.enabled && it.from != it.to }
@@ -69,13 +76,36 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         val browserTextEnabled = prefs.getBoolean(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, false)
         // 卡片图标：与改字完全独立——用户可能只想换图标、不动文案，所以单独判一次
         val iconSpec = prefs.getString(RedirectPrefs.KEY_CARD_ICON_URI, null)?.trim().orEmpty()
-        if (!rewriteEnabled && !browserTextEnabled && iconSpec.isEmpty()) return
-        if (swaps.isEmpty() && !browserTextEnabled) return
+        HookLog.card(
+            "diag: 开关 text=$rewriteEnabled browser=$browserTextEnabled " +
+                "icon=${iconSpec.ifEmpty { "无" }} swaps=${swaps.size}" +
+                swaps.joinToString(prefix = " [", postfix = "]") { "${it.from}->${it.to}" },
+        )
+        if (!rewriteEnabled && !browserTextEnabled && iconSpec.isEmpty()) {
+            HookLog.card("diag: 三个开关全关，跳过")
+            return
+        }
+        if (swaps.isEmpty() && !browserTextEnabled) {
+            HookLog.card("diag: 没有启用的替换规则，跳过")
+            return
+        }
 
-        val context = readField(builder, "context") as? Context ?: return
+        val ctxRaw = readField(builder, "context")
+        val context = ctxRaw as? Context
+        if (context == null) {
+            HookLog.card(
+                "diag: builder.context 不可用 " +
+                    "(builder=${builder?.javaClass?.name} value=${ctxRaw?.javaClass?.name})",
+            )
+            return
+        }
 
         val sCls = seedling.javaClass
-        val cardInfo = invoke(sCls, seedling, "getCardInfo") ?: return
+        val cardInfo = invoke(sCls, seedling, "getCardInfo")
+        if (cardInfo == null) {
+            HookLog.card("diag: getCardInfo 返回 null (seedlingCls=${sCls.name})")
+            return
+        }
         val data = invoke(sCls, seedling, "getData")
         val ciCls = cardInfo.javaClass
 
@@ -86,6 +116,9 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
 
         // 只碰"引导安装"这类卡片,普通卡片一个字都不动
         val looksInstall = listOfNotNull(button, left, right, title).any { it.contains("安装") }
+        HookLog.card(
+            "diag: looksInstall=$looksInstall title=$title button=$button left=$left right=$right",
+        )
         if (looksInstall && swaps.isNotEmpty() && (rewriteEnabled || iconSpec.isNotEmpty())) {
             if (
                 rewriteInstallCard(
