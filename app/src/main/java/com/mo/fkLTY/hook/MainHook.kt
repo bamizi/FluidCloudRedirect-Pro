@@ -47,9 +47,26 @@ class MainHook : XposedModule() {
         HookLog.bind(this)
         loadedProcessName = param.processName
         HookLog.log("loaded in ${param.processName}")
-        if (param.processName.endsWith(TARGET_PROCESS_SUFFIX)) {
+        if (isTargetProcess(param.processName)) {
             HookLog.log("target process detected; waiting for package lifecycle to install hooks")
         }
+    }
+
+    /**
+     * 是不是该装 hook 的 metis 进程。
+     *
+     * 历史上 TextIntent 跑在 `com.oplus.metis:text_intent` 子进程里，所以只认
+     * `:text_intent` 后缀。实测（ColorOS 系统更新后）metis **合并成了单进程**
+     * `com.oplus.metis`，`ps` 里已经没有任何 `:text_intent` 进程 ——
+     * 结果主 hook 一条都没装上：卡片改字、应用替换全失效，
+     * 而 `ContextImpl.startActivity` 兜底 hook 因为在主进程所以仍然工作，
+     * 表现就是「浏览器能跳、应用替换不跳」这种自相矛盾的状态。
+     *
+     * 现在主进程和 `:text_intent` 子进程都认，两种形态都能覆盖。
+     */
+    private fun isTargetProcess(name: String?): Boolean {
+        if (name == null) return false
+        return name == TARGET_PACKAGE || name.endsWith(TARGET_PROCESS_SUFFIX)
     }
 
     override fun onPackageLoaded(param: PackageLoadedParam) {
@@ -77,10 +94,10 @@ class MainHook : XposedModule() {
                 installLaunchHook(classLoader)
             }
 
-            if (!procName.endsWith(TARGET_PROCESS_SUFFIX)) return
+            if (!isTargetProcess(procName)) return
             if (!installed.compareAndSet(false, true)) return
 
-            HookLog.log("matched target process via $phase; installing hooks")
+            HookLog.log("matched target process via $phase; installing hooks (process=$procName)")
             installHooks(classLoader)
         } catch (t: Throwable) {
             HookLog.log("lifecycle error in $phase: ${t.javaClass.simpleName}: ${t.message}", t)
