@@ -72,6 +72,26 @@ object RedirectPrefs {
     /** 浏览器卡片改字的开关;**默认关**——网页卡数量多,判据错一次就改到不该改的卡 */
     const val KEY_BROWSER_CARD_TEXT_ENABLED = "browser_card_text_enabled"
 
+    // ---- 卡片图标(1.2.19 起) ----
+
+    /**
+     * 卡片图标来源；空串 = 不改（保留 metis 原图标）。
+     *
+     * 取值语义由反汇编 metis 的图标链路确定：`CardInfo.cardIcon` 收到的是
+     * **Uri 字符串**（metis 自己也是把服务端下发的 URL 下载到本地、
+     * 经 `SeedlingIconHandler.getShareUri` 转成 Uri 再写进去的），
+     * 不是 `@drawable/资源名`。
+     *
+     * 支持的写法：
+     * - `file:///storage/emulated/0/.../x.png`
+     * - `content://<authority>/...`
+     * - `app://<包名>`（本模块自定义：运行时用该 App 的启动图标）
+     */
+    const val KEY_CARD_ICON_URI = "card_icon_uri"
+
+    /** 图标代号：用目标应用自己的图标 */
+    const val ICON_SCHEME_APP = "app://"
+
     /**
      * 读取自定义卡片文字。留空的字段保持空串——钩子侧据此判断"这一项不改",
      * 而不是偷偷回退成默认值(用户清空某一行,通常就是不想改那一行)。

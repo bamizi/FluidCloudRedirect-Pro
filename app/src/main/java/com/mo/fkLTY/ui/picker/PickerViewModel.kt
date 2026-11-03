@@ -53,6 +53,8 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
         val cardOverrides: Map<String, CardText> = emptyMap(),
         /** 浏览器卡片的专用文案（默认全空 = 什么都不改） */
         val browserCardText: CardText = CardOverrides.EMPTY,
+        /** 卡片图标来源；空 = 不改。`app://{app}` = 用目标应用自己的图标 */
+        val cardIconUri: String = "",
         val message: UiMessage? = null,
     )
 
@@ -82,6 +84,8 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
                         cardOverrides = prefs?.let { RedirectPrefs.overrides(it) } ?: current.cardOverrides,
                         browserCardText = prefs?.let { RedirectPrefs.browserCardText(it) }
                             ?: current.browserCardText,
+                        cardIconUri = prefs?.getString(RedirectPrefs.KEY_CARD_ICON_URI, null)
+                            ?.trim().orEmpty(),
                     )
                 }
                 validateTarget()
@@ -170,6 +174,15 @@ class PickerViewModel(app: Application) : AndroidViewModel(app) {
     fun saveBrowserCardText(text: CardText) {
         if (PrefsBridge.saveBrowserCardText(text)) {
             _ui.update { it.copy(browserCardText = text, message = UiMessage(R.string.card_text_saved)) }
+        } else {
+            _ui.update { it.copy(message = UiMessage(R.string.save_failed)) }
+        }
+    }
+
+    /** 卡片图标来源；传空串 = 不改图标 */
+    fun saveCardIconUri(uri: String) {
+        if (PrefsBridge.saveCardIconUri(uri)) {
+            _ui.update { it.copy(cardIconUri = uri.trim(), message = UiMessage(R.string.card_text_saved)) }
         } else {
             _ui.update { it.copy(message = UiMessage(R.string.save_failed)) }
         }

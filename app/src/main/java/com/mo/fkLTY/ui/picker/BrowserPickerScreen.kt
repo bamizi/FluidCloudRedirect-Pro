@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Search
@@ -188,6 +189,7 @@ fun BrowserPickerScreen(
                             cardText = ui.cardText,
                             cardOverrides = ui.cardOverrides,
                             browserCardText = ui.browserCardText,
+                            cardIconUri = ui.cardIconUri,
                             rewriteEnabled = ui.rules[RedirectPrefs.KEY_REWRITE_CARD_LABEL] == true,
                             browserTextEnabled = ui.rules[RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED] == true,
                             onToggleRewrite = {
@@ -199,6 +201,7 @@ fun BrowserPickerScreen(
                             onSaveCardText = viewModel::saveCardText,
                             onSaveOverride = viewModel::saveCardOverride,
                             onSaveBrowserCardText = viewModel::saveBrowserCardText,
+                            onSaveCardIconUri = viewModel::saveCardIconUri,
                             onSave = viewModel::savePackageSwaps,
                         )
 
@@ -397,6 +400,7 @@ private fun SwapTab(
     cardText: CardText,
     cardOverrides: Map<String, CardText>,
     browserCardText: CardText,
+    cardIconUri: String,
     rewriteEnabled: Boolean,
     browserTextEnabled: Boolean,
     onToggleRewrite: (Boolean) -> Unit,
@@ -404,6 +408,7 @@ private fun SwapTab(
     onSaveCardText: (CardText) -> Unit,
     onSaveOverride: (String, CardText) -> Unit,
     onSaveBrowserCardText: (CardText) -> Unit,
+    onSaveCardIconUri: (String) -> Unit,
     onSave: (List<PackageSwap>) -> Unit,
 ) {
     val c = AppTheme.colors
@@ -469,6 +474,16 @@ private fun SwapTab(
         )
     }
 
+    // ── 卡片图标 ──
+    AppSectionTitle("卡片图标")
+    IconSection(
+        current = cardIconUri,
+        samplePkg = swaps.firstOrNull { it.enabled }?.to,
+        sampleLabel = swaps.firstOrNull { it.enabled }?.to
+            ?.let { pkg -> apps.firstOrNull { it.pkg == pkg }?.label },
+        onSave = onSaveCardIconUri,
+    )
+
     // ── 浏览器卡片（默认关） ──
     AppSectionTitle("浏览器卡片")
     AppCard(padded = false) {
@@ -501,6 +516,97 @@ private fun SwapTab(
         )
     }
 }
+
+/**
+ * 卡片图标设置。
+ *
+ * 开关的"开/关"直接由偏好值是否为空表示，不额外存一个布尔键——
+ * 少一个键就少一处可能与实际状态不一致的地方。
+ *
+ * 图标不是随便塞一个资源名：`CardInfo.cardIcon` 装的是 **Uri 字符串**
+ * （metis 自己也是把服务端下发的图片下载后转成 `content://` 再写进去的），
+ * 所以这里既能用目标应用自己的图标，也能指向任意图片文件。
+ */
+@Composable
+private fun IconSection(
+    current: String,
+    samplePkg: String?,
+    sampleLabel: String?,
+    onSave: (String) -> Unit,
+) {
+    val c = AppTheme.colors
+    val enabled = current.isNotEmpty()
+    // 开关关着时也给草稿一个合理初值，点开即可直接保存
+    var draft by remember(current) { mutableStateOf(current.ifEmpty { DEFAULT_ICON_SPEC }) }
+
+    AppCard(padded = false) {
+        AppRuleRow(
+            icon = Icons.Outlined.Image,
+            title = "改卡片图标",
+            subtitle = "把卡片上的图标换成目标应用自己的图标，或你指定的图片",
+            checked = enabled,
+            onCheckedChange = { on -> onSave(if (on) DEFAULT_ICON_SPEC else "") },
+        )
+    }
+
+    if (!enabled) {
+        Text(
+            text = "关闭时保持流体云原图标。",
+            style = AppType.rowSub,
+            color = c.textTertiary,
+            modifier = Modifier.padding(start = AppSpace.xs),
+        )
+        return
+    }
+
+    // 「用目标应用图标」时右侧显示会取哪个 App 的图标
+    val usedApp = when {
+        draft.startsWith(RedirectPrefs.ICON_SCHEME_APP) -> true
+        else -> false
+    }
+    val hint = when {
+        draft.isBlank() -> "关闭（不改图标）"
+        usedApp -> "→ 取「${sampleLabel ?: "目标应用"}」的图标"
+        else -> "→ 直接使用这个地址"
+    }
+
+    AppCard {
+        Text(
+            text = "用 {app} 代表目标应用的包名。默认写法 app://{app} 就是「用目标应用自己的图标」；" +
+                "也可以填 file:// 或 content:// 指向任意图片。图标会随目标应用自动切换，不用逐条设。",
+            style = AppType.rowSub,
+            color = c.textSecondary,
+        )
+        Spacer(Modifier.height(AppSpace.m))
+
+        AppTextField(
+            label = "图标来源",
+            value = draft,
+            placeholder = DEFAULT_ICON_SPEC,
+            hint = hint,
+            onValueChange = { draft = it },
+        )
+
+        Spacer(Modifier.height(AppSpace.m))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppSpace.s),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppButton(
+                text = "保存",
+                onClick = { onSave(draft) },
+                enabled = draft != current,
+            )
+            AppChip(
+                text = "用目标应用图标",
+                onClick = { draft = DEFAULT_ICON_SPEC },
+            )
+        }
+    }
+}
+
+/** 图标默认值：`app://{app}` = 用目标应用自己的图标 */
+private const val DEFAULT_ICON_SPEC = "app://{app}"
 
 /**
  * 卡片文字编辑器：四处文字都能自定义。

@@ -150,4 +150,19 @@ object PrefsBridge {
 
     fun saveBrowserCardTextEnabled(value: Boolean): Boolean =
         saveRule(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, value)
+
+    /**
+     * 保存卡片图标来源。空串 = 不改图标（会删掉这个键）。
+     *
+     * `{app}` 在图标里展开成目标应用**包名**，所以默认值写成 `app://{app}`
+     * 就是"用目标应用自己的图标"。
+     */
+    fun saveCardIconUri(uri: String): Boolean {
+        val prefs = _state.value.prefs ?: return false
+        val editor = prefs.edit()
+        val v = uri.trim()
+        if (v.isEmpty()) editor.remove(RedirectPrefs.KEY_CARD_ICON_URI)
+        else editor.putString(RedirectPrefs.KEY_CARD_ICON_URI, v)
+        return editor.commit()
+    }
 }

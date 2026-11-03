@@ -67,7 +67,9 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         val swaps = PackageSwapEngine.load(prefs).filter { it.enabled && it.from != it.to }
         // 浏览器卡片改字：独立开关，默认关（网页卡数量多，判据错一次就改到不该改的卡）
         val browserTextEnabled = prefs.getBoolean(RedirectPrefs.KEY_BROWSER_CARD_TEXT_ENABLED, false)
-        if (!rewriteEnabled && !browserTextEnabled) return
+        // 卡片图标：与改字完全独立——用户可能只想换图标、不动文案，所以单独判一次
+        val iconSpec = prefs.getString(RedirectPrefs.KEY_CARD_ICON_URI, null)?.trim().orEmpty()
+        if (!rewriteEnabled && !browserTextEnabled && iconSpec.isEmpty()) return
         if (swaps.isEmpty() && !browserTextEnabled) return
 
         val context = readField(builder, "context") as? Context ?: return
@@ -84,8 +86,15 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
 
         // 只碰"引导安装"这类卡片,普通卡片一个字都不动
         val looksInstall = listOfNotNull(button, left, right, title).any { it.contains("安装") }
-        if (looksInstall && rewriteEnabled && swaps.isNotEmpty()) {
-            if (rewriteInstallCard(context, prefs, cardInfo, ciCls, data, swaps, button, left, right, title)) return
+        if (looksInstall && swaps.isNotEmpty() && (rewriteEnabled || iconSpec.isNotEmpty())) {
+            if (
+                rewriteInstallCard(
+                    context, prefs, cardInfo, ciCls, data, swaps,
+                    button, left, right, title,
+                    textEnabled = rewriteEnabled,
+                    iconSpec = iconSpec,
+                )
+            ) return
         }
 
         // 不是安装卡（或安装卡没匹配到）时，再看是不是网页卡。
@@ -111,6 +120,8 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
         left: String?,
         right: String?,
         title: String?,
+        textEnabled: Boolean,
+        iconSpec: String,
     ): Boolean {
         val blobs = listOfNotNull(
             title,
@@ -130,50 +141,66 @@ class SeedlingLabelHooker : XposedInterface.Hooker {
             if (!BrowserAvailability.isAvailable(context, swap.to)) continue
 
             val label = appLabel(context, swap.to) ?: swap.to
-            // 1.2.18：先查这条规则自己的文案，没有才回落全局默认；{app} 已替换成目标应用名。
-            // 任一字段留空 = 该项不动，保留 metis 原文案。
-            val text = RedirectPrefs.cardText(prefs, swap.from).resolve(label)
-            val newButton = text.button
-            val newTitle = text.title
-            val newSubTitle = text.subtitle
-            val newCaps = text.caps
-
-            var changed = 0
-            if (newButton.isNotBlank()) {
-                if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
-                if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newButton)) changed++
-                if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newButton)) changed++
-            }
-
-            /*
-             * 标题 / 胶囊标题 / 胶囊直显文字:仍写着"安装"的才改。
-             * 不无条件覆盖的原因:metis 在不同场景会给这三处换成别的文案(如"打开查看"),
-             * 硬套自定义文字反而制造新的不一致。
-             */
-            if (newTitle.isNotBlank() && title != null && title.contains("安装")) {
-                if (set(ciCls, cardInfo, "setCardTitle", newTitle)) changed++
-            }
+            val subTitle = str(ciCls, cardInfo, "getCardSubTitle")
             val capsTitle = str(ciCls, cardInfo, "getCapsTitle")
             val capsDirect = str(ciCls, cardInfo, "getCapsDirectText")
-            if (newCaps.isNotBlank()) {
-                if (capsTitle != null && capsTitle.contains("安装")) {
-                    if (set(ciCls, cardInfo, "setCapsTitle", newCaps)) changed++
+
+            var changed = 0
+            var newButton = "(未改)"
+            var newTitle = "(未改)"
+            var newSubTitle = "(未改)"
+            var newCaps = "(未改)"
+
+            if (textEnabled) {
+                // 1.2.18：先查这条规则自己的文案，没有才回落全局默认；{app} 已替换成目标应用名。
+                // 任一字段留空 = 该项不动，保留 metis 原文案。
+                val text = RedirectPrefs.cardText(prefs, swap.from).resolve(label)
+                newButton = text.button
+                newTitle = text.title
+                newSubTitle = text.subtitle
+                newCaps = text.caps
+
+                if (newButton.isNotBlank()) {
+                    if (button != null) if (set(ciCls, cardInfo, "setButtonText", newButton)) changed++
+                    if (left != null) if (set(ciCls, cardInfo, "setLeftButtonText", newButton)) changed++
+                    if (right != null) if (set(ciCls, cardInfo, "setRightButtonText", newButton)) changed++
                 }
-                if (capsDirect != null && capsDirect.contains("安装")) {
-                    if (set(ciCls, cardInfo, "setCapsDirectText", newCaps)) changed++
+
+                /*
+                 * 标题 / 胶囊标题 / 胶囊直显文字:仍写着"安装"的才改。
+                 * 不无条件覆盖的原因:metis 在不同场景会给这三处换成别的文案(如"打开查看"),
+                 * 硬套自定义文字反而制造新的不一致。
+                 */
+                if (newTitle.isNotBlank() && title != null && title.contains("安装")) {
+                    if (set(ciCls, cardInfo, "setCardTitle", newTitle)) changed++
+                }
+                if (newCaps.isNotBlank()) {
+                    if (capsTitle != null && capsTitle.contains("安装")) {
+                        if (set(ciCls, cardInfo, "setCapsTitle", newCaps)) changed++
+                    }
+                    if (capsDirect != null && capsDirect.contains("安装")) {
+                        if (set(ciCls, cardInfo, "setCapsDirectText", newCaps)) changed++
+                    }
+                }
+                // 副标题是"前往一加软件商店安装"这类诱导安装话术,目标 App 已装就该说清楚
+                if (newSubTitle.isNotBlank() && subTitle != null && subTitle.contains("安装")) {
+                    if (set(ciCls, cardInfo, "setCardSubTitle", newSubTitle)) changed++
                 }
             }
-            // 副标题是"前往一加软件商店安装"这类诱导安装话术,目标 App 已装就该说清楚
-            val subTitle = str(ciCls, cardInfo, "getCardSubTitle")
-            if (newSubTitle.isNotBlank() && subTitle != null && subTitle.contains("安装")) {
-                if (set(ciCls, cardInfo, "setCardSubTitle", newSubTitle)) changed++
+
+            // 图标：与改字互不影响。`{app}` 在图标里展开成**包名**（app:// 后面要包名）。
+            var iconNote = ""
+            if (iconSpec.isNotEmpty()) {
+                val resolvedIcon = iconSpec.replace(RedirectPrefs.PLACEHOLDER_APP, swap.to)
+                val r = CardIconOverride.apply(context, cardInfo, ciCls, resolvedIcon, swap.to)
+                iconNote = if (r != null) ", icon[$r]" else ", icon[失败: $resolvedIcon]"
             }
 
             HookLog.card(
                 "seedling[build]: 引导安装卡改文案 fields=$changed " +
                     "(from=${swap.from} -> ${swap.to}; " +
                     "按钮「$button」->「$newButton」, 标题「$title」->「$newTitle」, " +
-                    "副标题「$subTitle」->「$newSubTitle」, 胶囊「$capsTitle」)",
+                    "副标题「$subTitle」->「$newSubTitle」, 胶囊「$capsTitle」)$iconNote",
             )
             return true
         }
