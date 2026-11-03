@@ -53,7 +53,7 @@ internal object CardIconOverride {
      * @return 成功改了哪几个字段的可读描述；全失败返回 null
      */
     fun apply(context: Context, cardInfo: Any, ciCls: Class<*>, spec: String, pkg: String): String? {
-        val uri = resolveToUri(context, spec, pkg) ?: return null
+        val uri = resolveToUri(context, ciCls, spec, pkg) ?: return null
 
         var changed = 0
         // 卡片主图标 + 通知栏左侧小图 + 胶囊图标，三处一起设：
@@ -72,13 +72,13 @@ internal object CardIconOverride {
     }
 
     /** 把用户填写的内容变成一个渲染层能读的 Uri 字符串 */
-    private fun resolveToUri(context: Context, spec: String, pkg: String): String? {
+    private fun resolveToUri(context: Context, ciCls: Class<*>, spec: String, pkg: String): String? {
         val s = spec.trim()
         if (s.isEmpty()) return null
 
         // app:// 取目标应用图标 → PNG → metis 共享目录 → 官方 Uri
         val target = if (s.startsWith("app://")) s.removePrefix("app://").ifBlank { pkg } else null
-        if (target != null) return shareAppIcon(context, target)
+        if (target != null) return shareAppIcon(context, ciCls, target)
 
         // 其余（file:// content:// 或裸路径）原样交给渲染层
         return when {
@@ -89,25 +89,25 @@ internal object CardIconOverride {
     }
 
     /** 取出某个应用的图标，写成 PNG 放进 metis 的共享目录，返回已授权的 content:// Uri */
-    private fun shareAppIcon(context: Context, pkg: String): String? {
+    private fun shareAppIcon(context: Context, ciCls: Class<*>, pkg: String): String? {
         val bitmap = runCatching {
             val info = context.packageManager.getApplicationInfo(pkg, 0)
             val drawable = context.packageManager.getApplicationIcon(info)
             drawable.toBitmap(192, 192)
         }.getOrNull() ?: return null
 
-        val dir = shareDir(context) ?: return null
+        val dir = shareDir(context, ciCls) ?: return null
         val file = File(dir, "fcr_${pkg.replace('.', '_')}.png")
         runCatching {
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }.onFailure { return null }
 
-        return shareUri(context, file.absolutePath) ?: "file://${file.absolutePath}"
+        return shareUri(context, ciCls, file.absolutePath) ?: "file://${file.absolutePath}"
     }
 
-    /** metis 的共享目录（`share_images`）；拿不到就退回本进程 cache，再不行就 null */
-    private fun shareDir(context: Context): File? {
-        val inst = shareHelperInstance() ?: return null
+    /** metis 的共享目录（`share_images`）；拿不到就返回 null，由调用方退回 file:// */
+    private fun shareDir(context: Context, ciCls: Class<*>): File? {
+        val inst = shareHelperInstance(ciCls) ?: return null
         val path = runCatching {
             val m = inst.javaClass.getMethod("getDefaultSharePath", Context::class.java)
             m.invoke(inst, context) as? String
@@ -125,8 +125,8 @@ internal object CardIconOverride {
      * `permissionUri()` 会顺带把读权限授予 SystemUI，自己拼的 Uri 没有这一步，
      * 渲染层拿到也读不了。
      */
-    private fun shareUri(context: Context, path: String): String? {
-        val inst = shareHelperInstance() ?: return null
+    private fun shareUri(context: Context, ciCls: Class<*>, path: String): String? {
+        val inst = shareHelperInstance(ciCls) ?: return null
         return runCatching {
             val m = inst.javaClass.getMethod(
                 "getShareFileUri",
@@ -137,10 +137,24 @@ internal object CardIconOverride {
         }.getOrNull()
     }
 
-    private fun shareHelperInstance(): Any? = runCatching {
-        val cls = Class.forName(SHARE_HELPER, false, javaClass.classLoader)
-        cls.getField("INSTANCE").get(null)
-    }.getOrNull()
+    /**
+     * 拿 `FileShareHelper` 单例。
+     *
+     * **必须用 metis 那边的 ClassLoader**：hook 代码是模块的 PathClassLoader 加载的，
+     * 直接 `Class.forName` + `javaClass.classLoader` 找不到宿主应用的类，会静默失败。
+     * 这里以 `CardInfo` 的 ClassLoader 为准（它就是 metis 的），再退回 Context 的。
+     */
+    private fun shareHelperInstance(ciCls: Class<*>): Any? {
+        val loaders = listOfNotNull(ciCls.classLoader, javaClass.classLoader)
+        for (cl in loaders) {
+            val inst = runCatching {
+                val cls = Class.forName(SHARE_HELPER, false, cl)
+                cls.getField("INSTANCE").get(null)
+            }.getOrNull()
+            if (inst != null) return inst
+        }
+        return null
+    }
 
     private fun setField(cls: Class<*>, target: Any, setter: String, value: String): Boolean =
         runCatching {
