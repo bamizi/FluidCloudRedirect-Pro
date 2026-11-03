@@ -20,6 +20,14 @@ class StartActivityHooker(private val source: String) : XposedInterface.Hooker {
         try {
             val intent = chain.getArg(0) as? Intent
             val context = chain.thisObject as? android.content.Context
+            // 留痕：这条兜底链路被调到没有，是判断"卡片点击到底走哪条路"的关键。
+            // 配额 40 次（HookLog.card），排查期够用，日常也不会刷屏。
+            if (intent != null) {
+                HookLog.card(
+                    "startActivity reached[$source]: pkg=${intent.component?.packageName ?: "-"}" +
+                        " action=${intent.action} data=${intent.dataString}",
+                )
+            }
             // 具体要不要处理由 RedirectEngine 内部判定(带网页数据 / 目标包在替换表里),
             // 这里不做前置过滤,否则会漏掉"没有网址只有目标包"的口令卡片。
             if (intent != null && context != null) {

@@ -33,12 +33,29 @@ object HookLog {
     val isBound: Boolean
         get() = module != null
 
+    /**
+     * 写日志。
+     *
+     * **同时写两个通道**：
+     * - `module.log()` → LSPosed 管理器里的「日志」页（用户手动看）
+     * - `Log.println()` → 系统 logcat（`adb logcat -s FluidRedirect` 直接抓）
+     *
+     * 只写前者的话，没有 root、也没法操作管理器时完全看不到运行情况；
+     * 排查「卡片到底走没走 hook」这类问题，能直接 adb 抓日志是决定性的。
+     */
     fun log(msg: String) {
-        module?.log(Log.INFO, TAG, "$PREFIX $msg")
+        val line = "$PREFIX $msg"
+        module?.log(Log.INFO, TAG, line)
+        runCatching { Log.println(Log.INFO, TAG, line) }
     }
 
     fun log(msg: String, tr: Throwable) {
-        module?.log(Log.INFO, TAG, "$PREFIX $msg", tr)
+        val line = "$PREFIX $msg"
+        module?.log(Log.INFO, TAG, line, tr)
+        runCatching {
+            Log.println(Log.INFO, TAG, line)
+            Log.println(Log.INFO, TAG, Log.getStackTraceString(tr))
+        }
     }
 
     /** 一次性日志:同类异常每进程只打一次(沿用旧模块 logOnce 语义) */
