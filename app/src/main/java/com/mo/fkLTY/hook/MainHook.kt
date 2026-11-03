@@ -145,6 +145,34 @@ class MainHook : XposedModule() {
         installMonitorHook(classLoader)
         installSeedlingLabelHook(classLoader)
         installInstallPanelHooks(classLoader)
+        installCardDataFillHook(classLoader)
+    }
+
+    /**
+     * F 数据补位 hook：`TextSeedlingCardWidgetNewProvider.onCardCreate(Context, SeedlingCard)`。
+     *
+     * 1.2.24 新增。真机日志确认 metis 只发 `updateIntelligentData`（带 intent_id），
+     * 从不发 `updateData`（带卡片内容），导致 SystemUI 侧 `loadPage uiData is null`、
+     * 卡片渲染成透明空壳。这里在卡片创建后主动补一次 `updateData`。
+     *
+     * 详见 CardDataFillHooker 的类注释与 CHANGELOG 1.2.24。
+     */
+    private fun installCardDataFillHook(classLoader: ClassLoader) {
+        try {
+            val providerCls = classLoader.loadClass(CLASS_CARD_PROVIDER)
+            val cardCls = classLoader.loadClass(CLASS_SEEDLING_CARD)
+            val method = providerCls.getDeclaredMethod("onCardCreate", Context::class.java, cardCls)
+            hook(method).setExceptionMode(ExceptionMode.PROTECTIVE).intercept(CardDataFillHooker())
+            HookLog.once(
+                "installed:datafill",
+                "Hook installed: TextSeedlingCardWidgetNewProvider.onCardCreate",
+            )
+        } catch (t: Throwable) {
+            HookLog.once(
+                "fail:datafill",
+                "Cannot hook onCardCreate: ${t.javaClass.simpleName}: ${t.message}",
+            )
+        }
     }
 
     /**
@@ -241,6 +269,8 @@ class MainHook : XposedModule() {
         private const val CLASS_ZOOM_HANDLER = "com.oplus.textintent.common.utils.ZoomOpenHandler"
         private const val CLASS_CONTEXT_IMPL = "android.app.ContextImpl"
         private const val CLASS_INSTALL_PANEL = "com.oplus.textintent.distribution.ui.SingleAppInstallPanel"
+        private const val CLASS_CARD_PROVIDER = "com.oplus.textintent.pantanalservice.TextSeedlingCardWidgetNewProvider"
+        private const val CLASS_SEEDLING_CARD = "com.oplus.pantanal.seedling.bean.SeedlingCard"
         private val PANEL_TEXT_METHODS = arrayOf("onPositiveText", "onTitle")
         private val PARSE_INTENT_CLASSES = arrayOf(
             "com.oplus.textintent.distribution.bean.SchemeData",

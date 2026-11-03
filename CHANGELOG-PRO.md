@@ -1,5 +1,68 @@
 # FluidCloudRedirect Pro - 变更记录
 
+## 1.2.24（卡片数据补位：把空壳卡片填上内容）
+
+> 1.2.19~1.2.23 是排障版，没单独记；这一段把结论一次性写清。
+
+### 现象
+
+复制夸克口令后，状态栏什么都不出现。不是"没弹"，是**弹了一张透明卡片** ——
+SystemUI 侧日志：
+
+```
+[ULEView.StatusBar22] loadOnIOThread->...;StatusBar;notification_sm; jsonData=>   ← 空
+[CardFrontend.StatusBar22] loadPage uiData is null
+[SeedCardEngine] doUpdateCardData failed, uiData is empty
+[CardView] obtainView, seedling is null, obtainDefaultView
+```
+
+### 根因
+
+反编译 metis（`/product/priv-app/Metis/Metis.apk`，`classes2.dex`）里
+`TextSeedlingCardWidgetNewProvider.call()`，它只分发三种 method：
+
+| method | 去向 |
+|---|---|
+| `updateData` | `updateData(card, businessData, cardOptions)` ← **卡片内容** |
+| `updateIntelligentData` | 转 `PantanalIntent` 交给排序算法 ← **只有 intent_id** |
+| 其他 | `super.call()` |
+
+整段真机日志（6 万余行，含三次复制）：
+
+```
+call method: updateData          → 1 次（且不属于 text_intent 链路）
+updateIntelligentData            → 每次复制都调，data 里只有 intent_id
+onCardCreate                     → 正常触发
+```
+
+也就是说：**metis 只发「意图事件」，从不发「卡片内容」**。`pages/index.json` 里
+`{{cardTitle}}`/`{{capsIcon}}`/`{{buttonText}}` 这些变量没人填，模板默认值全是空字符串，
+渲染出来就是透明卡片，10 秒后按空壳销毁。
+
+排除过的方向（都不是原因）：UPK 资源缺失（`pages/index.json` 7533 字节，versionCode 2000038
+完好）、UPK 缓存损坏（删掉重建后现象不变）、网络（`iwisdom.apps.coloros.com` 38ms 可达、
+无代理）、权限（`GET_USAGE_STATS` 补上后识别恢复，但卡片仍是空壳）、时序（冷启动与热进程两次
+结果一致）、metis 更新（`codePath=/product/priv-app/Metis`，从未被商店更新过，无可卸载更新）。
+
+### 修复
+
+新增 `CardDataFillHooker`，挂在
+`TextSeedlingCardWidgetNewProvider.onCardCreate(Context, SeedlingCard)` 之后：
+若 `serviceId == 536879167`（文本意图卡）且开关打开，就按 `pages/index.json` 的 `data`
+字段构造一份 JSON，反射调用父类的 `updateData(card, payload, null)` 补上内容。
+
+- 字段名与 UPK 模板一一对应：`cardTitle` `cardSubTitle` `capsTitle` `capsDirectText`
+  `cardIcon` `capsIcon` `capsDirectIcon` `enableButton` `buttonText` `eventType/eventUri/eventData`
+- 只碰 `serviceId = 536879167`，其他流体云卡片（导航/外卖/快递）一律不动
+- 开关 `card_data_fill_enabled` 默认开；任何反射失败只记日志并原样放行
+- 图标沿用 UPK 内置的 `assets/images/general_logo.png`，不引入外部资源
+
+### 已知限制
+
+首版文案是通用的「口令 / 点击打开 / 打开」，还没接识别结果里的目标应用名。
+等链路验证通过后再把 App 名接进来（`textIntents` 侧的 `commercialConfigName` → `appName` 映射，
+数据源是 `ointent_app_share.json`，夸克条目已确认存在）。
+
 ## 1.2.18（分条文案 + 浏览器卡片文案）
 
 两条需求：**每条替换规则写自己的文案**、**浏览器卡片也能改字**。图标自定义待验证，见文末。
